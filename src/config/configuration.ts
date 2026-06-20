@@ -52,6 +52,13 @@ export interface AiConfig {
   effort: 'low' | 'medium' | 'high' | 'max';
 }
 
+export interface P2pConfig {
+  enabled: boolean;
+  port: number;
+  peers: string[]; // URLs ws:// de los nodos peer iniciales
+  nodeName: string;
+}
+
 export interface AuthConfig {
   jwtSecret: string;
   jwtRefreshSecret: string;
@@ -101,6 +108,15 @@ export default () => ({
     model: process.env.AI_MODEL ?? '',
     effort: (process.env.AI_EFFORT ?? 'medium') as AiConfig['effort'],
   } satisfies AiConfig,
+  p2p: {
+    enabled: (process.env.P2P_ENABLED ?? 'false') === 'true',
+    port: parseInt(process.env.P2P_PORT ?? '6001', 10),
+    peers: (process.env.PEERS ?? '')
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean),
+    nodeName: process.env.NODE_NAME ?? 'node-1',
+  } satisfies P2pConfig,
   auth: {
     // Sin default: la validación Joi los exige (mín. 32 chars). Genéralos con
     // `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.

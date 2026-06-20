@@ -48,4 +48,9 @@ export const envValidationSchema = Joi.object({
   COOKIE_DOMAIN: Joi.string().allow('').default(''),
   COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
   COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
+
+  P2P_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+  P2P_PORT: Joi.number().default(6001),
+  PEERS: Joi.string().allow('').default(''),
+  NODE_NAME: Joi.string().default('node-1'),
 });

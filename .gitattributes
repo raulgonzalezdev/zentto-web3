@@ -1,0 +1,8 @@
+# Normaliza todos los archivos de texto a LF (evita ruido CRLF en Windows).
+* text=auto eol=lf
+
+# Binarios: sin conversión.
+*.png binary
+*.jpg binary
+*.ico binary
+*.gz binary

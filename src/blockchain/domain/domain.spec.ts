@@ -48,4 +48,20 @@ describe('Block (dominio) — Proof of Work', () => {
     block.nonce += 1; // manipulación sin recalcular hash
     expect(block.hasValidProof()).toBe(false);
   });
+
+  it('es determinista: mismos inputs producen el mismo hash y nonce (base del génesis P2P)', () => {
+    // Misma entrada (timestamp e ids fijos) => mismo bloque en cualquier nodo.
+    const ts = 1700000000000;
+    const mk = () => {
+      const tx = new Transaction(null, 'addr-fija', 100, 0, ts, null, 'fixed-id');
+      const b = new Block(0, ts, [tx], '0'.repeat(64), 3);
+      b.mine();
+      return b;
+    };
+    const a = mk();
+    const c = mk();
+    expect(a.hash).toEqual(c.hash);
+    expect(a.nonce).toEqual(c.nonce);
+    expect(a.merkleRoot).toEqual(c.merkleRoot);
+  });
 });
