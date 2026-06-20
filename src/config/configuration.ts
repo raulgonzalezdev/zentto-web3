@@ -52,6 +52,16 @@ export interface AiConfig {
   effort: 'low' | 'medium' | 'high' | 'max';
 }
 
+export interface EvmConfig {
+  rpcUrl: string;
+  chainId: number;
+  chainName: string;
+  explorerUrl: string;
+  nativeSymbol: string;
+  /** Token ERC-20 a mostrar por defecto (ej. USDC en la testnet). */
+  usdcAddress: string;
+}
+
 export interface P2pConfig {
   enabled: boolean;
   port: number;
@@ -108,6 +118,16 @@ export default () => ({
     model: process.env.AI_MODEL ?? '',
     effort: (process.env.AI_EFFORT ?? 'medium') as AiConfig['effort'],
   } satisfies AiConfig,
+  evm: {
+    // RPC público de Sepolia por defecto (sin API key). En prod usar Alchemy/Infura.
+    rpcUrl: process.env.EVM_RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com',
+    chainId: parseInt(process.env.EVM_CHAIN_ID ?? '11155111', 10),
+    chainName: process.env.EVM_CHAIN_NAME ?? 'Sepolia',
+    explorerUrl: process.env.EVM_EXPLORER_URL ?? 'https://sepolia.etherscan.io',
+    nativeSymbol: process.env.EVM_NATIVE_SYMBOL ?? 'ETH',
+    // USDC oficial de Circle en Sepolia.
+    usdcAddress: process.env.EVM_USDC_ADDRESS ?? '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+  } satisfies EvmConfig,
   p2p: {
     enabled: (process.env.P2P_ENABLED ?? 'false') === 'true',
     port: parseInt(process.env.P2P_PORT ?? '6001', 10),

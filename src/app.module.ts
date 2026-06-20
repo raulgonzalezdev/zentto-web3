@@ -13,6 +13,7 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ComplianceModule } from './compliance/compliance.module';
 import configuration, { RedisConfig } from './config/configuration';
+import { EvmModule } from './evm/evm.module';
 import { envValidationSchema } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
@@ -43,6 +44,7 @@ import { WalletsModule } from './wallets/wallets.module';
     ComplianceModule,
     AnalyticsModule,
     P2pModule,
+    EvmModule,
     HealthModule,
   ],
   providers: [

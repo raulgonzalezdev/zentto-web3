@@ -49,6 +49,13 @@ export const envValidationSchema = Joi.object({
   COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
   COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
 
+  EVM_RPC_URL: Joi.string().default('https://ethereum-sepolia-rpc.publicnode.com'),
+  EVM_CHAIN_ID: Joi.number().default(11155111),
+  EVM_CHAIN_NAME: Joi.string().default('Sepolia'),
+  EVM_EXPLORER_URL: Joi.string().default('https://sepolia.etherscan.io'),
+  EVM_NATIVE_SYMBOL: Joi.string().default('ETH'),
+  EVM_USDC_ADDRESS: Joi.string().default('0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'),
+
   P2P_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   P2P_PORT: Joi.number().default(6001),
   PEERS: Joi.string().allow('').default(''),
