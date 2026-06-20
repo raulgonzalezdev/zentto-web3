@@ -84,6 +84,33 @@ export class KycService {
     });
   }
 
+  /**
+   * Inicia una sesión hospedada de Didit (cámara con encuadre de documento +
+   * óvalo de selfie + liveness). Devuelve la URL a abrir en la app; el resultado
+   * llega por webhook y la app consulta GET /kyc/status.
+   */
+  async startSession(userId: string, fullName?: string): Promise<KycStatusView & { redirectUrl: string | null }> {
+    const existing = await this.repo.findOne({ where: { userId } });
+    if (existing && existing.status === 'approved') {
+      throw new BadRequestException('Tu identidad ya está verificada');
+    }
+    const session = await this.provider.createSession({ userId, fullName: fullName ?? null });
+    const entity = existing ?? this.repo.create({ id: randomUUID(), userId, status: 'not_started' });
+    Object.assign(entity, {
+      status: session.initialStatus,
+      provider: this.provider.name,
+      providerRef: session.ref,
+      fullName: fullName ?? entity.fullName,
+    });
+    await this.repo.save(entity);
+    return {
+      id: entity.id,
+      status: session.initialStatus,
+      provider: this.provider.name,
+      redirectUrl: session.redirectUrl,
+    };
+  }
+
   /** ¿El usuario está verificado? (gate para retiros/limites). */
   async isApproved(userId: string): Promise<boolean> {
     const v = await this.repo.findOne({ where: { userId } });

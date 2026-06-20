@@ -37,6 +37,12 @@ export class KycController {
     return this.kyc.submit(user.sub, dto);
   }
 
+  @Post('session')
+  @ApiOperation({ summary: 'Inicia una sesión hospedada de Didit (cámara con guías + óvalo)' })
+  session(@CurrentUser() user: AuthUser, @Body() body: { fullName?: string }) {
+    return this.kyc.startSession(user.sub, body?.fullName);
+  }
+
   @Post('verify-documents')
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Verificación server-to-server (sube documento + selfie)' })
