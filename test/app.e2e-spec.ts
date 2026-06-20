@@ -161,6 +161,37 @@ describe('Zentto Web3 (e2e)', () => {
     expect(res.body.network).toBe('evm');
   });
 
+  it('retiro coloca un hold: disponible baja, saldo intacto, estado processing', async () => {
+    const creditKey = `e2e-wc-${Date.now()}`;
+    await agent
+      .post('/api/payments/credit')
+      .set('x-csrf-token', csrf)
+      .set('Idempotency-Key', creditKey)
+      .send({ asset: 'USDC', amount: '100' })
+      .expect(201);
+
+    const res = await agent
+      .post('/api/payments/withdraw')
+      .set('x-csrf-token', csrf)
+      .set('Idempotency-Key', `e2e-w-${Date.now()}`)
+      .send({
+        asset: 'USDC',
+        amount: '30',
+        toAddress: '0x000000000000000000000000000000000000dead',
+      })
+      .expect(201);
+    expect(res.body.status).toBe('processing');
+    expect(res.body.type).toBe('withdrawal');
+
+    const bal = await agent.get('/api/accounts/balance').expect(200);
+    const usdc = (
+      bal.body as Array<{ asset: string; balance: string; held: string; available: string }>
+    ).find((b) => b.asset === 'USDC');
+    expect(usdc?.balance).toBe('100'); // saldo contable intacto hasta confirmar on-chain
+    expect(usdc?.held).toBe('30'); // retenido por el hold
+    expect(usdc?.available).toBe('70'); // disponible = saldo − hold
+  });
+
   it('logout cierra la sesión', async () => {
     await agent.post('/api/auth/logout').set('x-csrf-token', csrf).expect(201);
     await agent.get('/api/auth/me').expect(401);

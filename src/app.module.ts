@@ -23,6 +23,7 @@ import { MiningModule } from './mining/mining.module';
 import { PaymentsModule } from './payments/payments.module';
 import { P2pModule } from './p2p/p2p.module';
 import { WalletsModule } from './wallets/wallets.module';
+import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { WalletsModule } from './wallets/wallets.module';
     PaymentsModule,
     CustodyModule,
     IndexerModule,
+    WithdrawalsModule,
     HealthModule,
   ],
   providers: [
