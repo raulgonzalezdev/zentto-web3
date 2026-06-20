@@ -50,6 +50,8 @@ export const envValidationSchema = Joi.object({
   COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
 
   CUSTODY_MNEMONIC: Joi.string().allow('').default(''),
+  KYC_PROVIDER: Joi.string().valid('manual', 'didit').default('manual'),
+  DIDIT_API_KEY: Joi.string().allow('').default(''),
   DEPOSIT_INDEXER_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   WITHDRAWALS_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   EVM_CONFIRMATIONS: Joi.number().min(0).default(3),
