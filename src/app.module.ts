@@ -18,6 +18,7 @@ import { EvmModule } from './evm/evm.module';
 import { envValidationSchema } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
+import { IndexerModule } from './indexer/indexer.module';
 import { MiningModule } from './mining/mining.module';
 import { PaymentsModule } from './payments/payments.module';
 import { P2pModule } from './p2p/p2p.module';
@@ -49,6 +50,7 @@ import { WalletsModule } from './wallets/wallets.module';
     EvmModule,
     PaymentsModule,
     CustodyModule,
+    IndexerModule,
     HealthModule,
   ],
   providers: [

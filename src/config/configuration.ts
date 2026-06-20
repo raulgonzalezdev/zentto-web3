@@ -52,6 +52,15 @@ export interface AiConfig {
   effort: 'low' | 'medium' | 'high' | 'max';
 }
 
+export interface IndexerConfig {
+  /** Escaneo automático periódico de depósitos. */
+  enabled: boolean;
+  /** Confirmaciones requeridas antes de acreditar un depósito. */
+  confirmations: number;
+  /** Máximo de bloques por escaneo (límite de los RPC). */
+  scanRange: number;
+}
+
 export interface CustodyConfig {
   /** Mnemónico maestro para derivar direcciones de depósito (DEV/testnet; en prod: KMS/MPC). */
   mnemonic: string;
@@ -135,6 +144,11 @@ export default () => ({
   custody: {
     mnemonic: process.env.CUSTODY_MNEMONIC ?? '',
   } satisfies CustodyConfig,
+  indexer: {
+    enabled: (process.env.DEPOSIT_INDEXER_ENABLED ?? 'false') === 'true',
+    confirmations: parseInt(process.env.EVM_CONFIRMATIONS ?? '3', 10),
+    scanRange: parseInt(process.env.DEPOSIT_SCAN_RANGE ?? '2000', 10),
+  } satisfies IndexerConfig,
   ledger: {
     assets: (process.env.LEDGER_ASSETS ?? 'USDT,USDC')
       .split(',')
@@ -144,8 +158,9 @@ export default () => ({
     faucetMax: parseInt(process.env.FAUCET_MAX ?? '1000', 10),
   } satisfies LedgerConfig,
   evm: {
-    // RPC público de Sepolia por defecto (sin API key). En prod usar Alchemy/Infura.
-    rpcUrl: process.env.EVM_RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com',
+    // RPC público de Sepolia (soporta eth_getLogs para el indexer, sin API key).
+    // En producción usar Alchemy/Infura/QuickNode (archive + rate limits altos).
+    rpcUrl: process.env.EVM_RPC_URL ?? 'https://sepolia.drpc.org',
     chainId: parseInt(process.env.EVM_CHAIN_ID ?? '11155111', 10),
     chainName: process.env.EVM_CHAIN_NAME ?? 'Sepolia',
     explorerUrl: process.env.EVM_EXPLORER_URL ?? 'https://sepolia.etherscan.io',

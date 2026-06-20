@@ -8,6 +8,7 @@ import {
   formatUnits,
   http,
   isAddress,
+  parseAbiItem,
   PublicClient,
 } from 'viem';
 import { EvmConfig } from '../config/configuration';
@@ -141,6 +142,51 @@ export class EvmService implements OnModuleInit {
       raw: (raw as bigint).toString(),
       formatted: formatUnits(raw as bigint, Number(decimals)),
     };
+  }
+
+  // ─────────────────────────── Indexer (depósitos) ───────────────────────────
+
+  async currentBlock(): Promise<bigint> {
+    return this.client.getBlockNumber();
+  }
+
+  async tokenDecimals(tokenAddress: string): Promise<number> {
+    const token = this.assertAddress(tokenAddress);
+    const dec = await this.client.readContract({
+      address: token,
+      abi: ERC20_ABI,
+      functionName: 'decimals',
+    });
+    return Number(dec);
+  }
+
+  /** Eventos Transfer ERC-20 (del token) hacia un conjunto de direcciones, en un rango de bloques. */
+  async getErc20TransfersTo(
+    tokenAddress: string,
+    toAddresses: string[],
+    fromBlock: bigint,
+    toBlock: bigint,
+  ): Promise<
+    Array<{ txHash: string; logIndex: number; to: string; value: bigint; blockNumber: bigint }>
+  > {
+    if (toAddresses.length === 0) return [];
+    const token = this.assertAddress(tokenAddress);
+    const logs = await this.client.getLogs({
+      address: token,
+      event: parseAbiItem(
+        'event Transfer(address indexed from, address indexed to, uint256 value)',
+      ),
+      args: { to: toAddresses as `0x${string}`[] },
+      fromBlock,
+      toBlock,
+    });
+    return logs.map((l) => ({
+      txHash: l.transactionHash as string,
+      logIndex: l.logIndex as number,
+      to: (l.args.to as string).toLowerCase(),
+      value: l.args.value as bigint,
+      blockNumber: l.blockNumber as bigint,
+    }));
   }
 
   /** Estado de una transacción por hash (confirmaciones, éxito/fallo). */
