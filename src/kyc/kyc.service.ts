@@ -14,6 +14,7 @@ import { KycStatus, KycVerificationEntity } from '../database/entities/kyc-verif
 import { AmlScreeningService } from './aml-screening.service';
 import { KycSubmitDto } from './dto/kyc.dto';
 import { MrzService } from './mrz.service';
+import { DiditApiService, UploadFile } from './providers/didit-api.service';
 import { verifyDiditSignature } from './providers/didit-webhook.util';
 import { DiditProvider } from './providers/didit.provider';
 import { KycProvider } from './providers/kyc-provider';
@@ -45,6 +46,7 @@ export class KycService {
     private readonly repo: Repository<KycVerificationEntity>,
     private readonly mrz: MrzService,
     private readonly aml: AmlScreeningService,
+    private readonly diditApi: DiditApiService,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<KycConfig>('kyc');
@@ -146,6 +148,86 @@ export class KycService {
       amlMatch: aml.match,
       redirectUrl: session.redirectUrl,
     };
+  }
+
+  /**
+   * Verificación server-to-server (standalone APIs de Didit): NOSOTROS capturamos
+   * las imágenes y Didit resuelve la parte adversarial de forma SÍNCRONA.
+   * Combina id-verification + liveness + face-match (Didit) con OFAC (nuestro).
+   */
+  async verifyWithDocuments(
+    userId: string,
+    files: { front?: UploadFile; back?: UploadFile; selfie?: UploadFile },
+    fullNameInput?: string,
+  ): Promise<KycStatusView> {
+    if (!this.diditApi.enabled) {
+      throw new BadRequestException(
+        'Verificación con Didit no configurada (DIDIT_API_KEY ausente)',
+      );
+    }
+    if (!files.front) throw new BadRequestException('front_image es obligatoria');
+    const existing = await this.repo.findOne({ where: { userId } });
+    if (existing && existing.status === 'approved') {
+      throw new BadRequestException('Tu identidad ya está verificada');
+    }
+
+    const isApproved = (s?: string) => s === 'Approved';
+    const isDeclined = (s?: string) => s === 'Declined';
+
+    const entity =
+      existing ?? this.repo.create({ id: randomUUID(), userId, status: 'not_started' });
+    try {
+      const id = await this.diditApi.idVerification(files.front, files.back, userId);
+      let liveOk = true;
+      let faceOk = true;
+      let declinedBiometrics = false;
+      if (files.selfie) {
+        const [live, face] = await Promise.all([
+          this.diditApi.passiveLiveness(files.selfie),
+          this.diditApi.faceMatch(files.selfie, files.front),
+        ]);
+        liveOk = isApproved(live.status);
+        faceOk = isApproved(face.status);
+        declinedBiometrics = isDeclined(live.status) || isDeclined(face.status);
+        entity.livenessPassed = liveOk;
+      }
+
+      const fullName = (fullNameInput ?? `${id.first_name ?? ''} ${id.last_name ?? ''}`).trim();
+      const ofac = this.aml.screen(fullName);
+
+      const declined = isDeclined(id.status) || declinedBiometrics;
+      const allApproved = isApproved(id.status) && liveOk && faceOk;
+      const status: KycStatus = declined
+        ? 'rejected'
+        : allApproved && !ofac.match
+          ? 'approved'
+          : 'in_review';
+
+      Object.assign(entity, {
+        status,
+        fullName: fullName || entity.fullName,
+        documentType: id.document_type ?? entity.documentType,
+        documentNumber: id.document_number ?? entity.documentNumber,
+        nationality: id.nationality ?? entity.nationality,
+        birthDate: id.date_of_birth ?? entity.birthDate,
+        amlMatch: ofac.match,
+        amlHits: ofac.hits,
+        provider: 'didit',
+        decisionReason: declined ? 'Documento o biometría rechazados por Didit' : null,
+      });
+      await this.repo.save(entity);
+      return { id: entity.id, status, provider: 'didit', amlMatch: ofac.match };
+    } catch (err) {
+      // Si Didit falla, no rechazamos: a revisión manual con el motivo.
+      this.logger.error(`verifyWithDocuments error: ${(err as Error).message}`);
+      Object.assign(entity, {
+        status: 'in_review',
+        provider: 'didit',
+        decisionReason: `Error del proveedor: ${(err as Error).message}`,
+      });
+      await this.repo.save(entity);
+      return { id: entity.id, status: 'in_review', provider: 'didit' };
+    }
   }
 
   /**

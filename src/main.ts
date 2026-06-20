@@ -1,4 +1,4 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -24,7 +24,11 @@ async function bootstrap() {
     credentials: true,
     exposedHeaders: ['X-CSRF-Token'],
   });
-  app.setGlobalPrefix(appCfg.apiPrefix);
+  // El webhook de Didit se sirve también en /webhook/didit (sin el prefijo /api),
+  // para que coincida con la URL registrada en el dashboard de Didit.
+  app.setGlobalPrefix(appCfg.apiPrefix, {
+    exclude: [{ path: 'webhook/didit', method: RequestMethod.POST }],
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

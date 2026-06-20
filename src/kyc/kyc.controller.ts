@@ -1,10 +1,24 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UploadedFiles,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { UploadFile } from './providers/didit-api.service';
 import { KycDecisionDto, KycSubmitDto } from './dto/kyc.dto';
 import { KycService } from './kyc.service';
+
+type MulterFile = { buffer: Buffer; originalname: string; mimetype: string };
+const first = (f?: MulterFile[]): UploadFile | undefined => f?.[0];
 
 @ApiTags('kyc')
 @Controller('kyc')
@@ -21,6 +35,33 @@ export class KycController {
   @ApiOperation({ summary: 'Envía datos + documento (MRZ) para verificación' })
   submit(@CurrentUser() user: AuthUser, @Body() dto: KycSubmitDto) {
     return this.kyc.submit(user.sub, dto);
+  }
+
+  @Post('verify-documents')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Verificación server-to-server (sube documento + selfie)' })
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'front_image', maxCount: 1 },
+      { name: 'back_image', maxCount: 1 },
+      { name: 'selfie', maxCount: 1 },
+    ]),
+  )
+  verifyDocuments(
+    @CurrentUser() user: AuthUser,
+    @UploadedFiles()
+    files: { front_image?: MulterFile[]; back_image?: MulterFile[]; selfie?: MulterFile[] },
+    @Body('fullName') fullName?: string,
+  ) {
+    return this.kyc.verifyWithDocuments(
+      user.sub,
+      {
+        front: first(files?.front_image),
+        back: first(files?.back_image),
+        selfie: first(files?.selfie),
+      },
+      fullName,
+    );
   }
 
   // Webhook server-to-server de Didit (sin auth/CSRF: se valida por firma HMAC).
