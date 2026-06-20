@@ -2,6 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import { randomBytes } from 'crypto';
+import { authenticator } from 'otplib';
 import request from 'supertest';
 import { english, generateMnemonic } from 'viem/accounts';
 
@@ -161,13 +162,35 @@ describe('Zentto Web3 (e2e)', () => {
     expect(res.body.network).toBe('evm');
   });
 
-  it('retiro coloca un hold: disponible baja, saldo intacto, estado processing', async () => {
-    const creditKey = `e2e-wc-${Date.now()}`;
+  it('el retiro exige Google Authenticator (TOTP): sin código → 400', async () => {
     await agent
       .post('/api/payments/credit')
       .set('x-csrf-token', csrf)
-      .set('Idempotency-Key', creditKey)
+      .set('Idempotency-Key', `e2e-wc-${Date.now()}`)
       .send({ asset: 'USDC', amount: '100' })
+      .expect(201);
+
+    // Sin 2FA habilitado aún → retiro bloqueado.
+    await agent
+      .post('/api/payments/withdraw')
+      .set('x-csrf-token', csrf)
+      .set('Idempotency-Key', `e2e-w-no2fa-${Date.now()}`)
+      .send({
+        asset: 'USDC',
+        amount: '30',
+        toAddress: '0x000000000000000000000000000000000000dead',
+      })
+      .expect(400);
+  });
+
+  it('retiro autorizado con TOTP coloca un hold: disponible baja, saldo intacto', async () => {
+    // Habilita 2FA (como escanear el QR en Google Authenticator).
+    const setup = await agent.post('/api/auth/2fa/setup').set('x-csrf-token', csrf).expect(201);
+    const secret = setup.body.secret as string;
+    await agent
+      .post('/api/auth/2fa/enable')
+      .set('x-csrf-token', csrf)
+      .send({ code: authenticator.generate(secret) })
       .expect(201);
 
     const res = await agent
@@ -178,6 +201,7 @@ describe('Zentto Web3 (e2e)', () => {
         asset: 'USDC',
         amount: '30',
         toAddress: '0x000000000000000000000000000000000000dead',
+        totpCode: authenticator.generate(secret),
       })
       .expect(201);
     expect(res.body.status).toBe('processing');

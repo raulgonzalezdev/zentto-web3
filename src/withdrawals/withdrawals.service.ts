@@ -4,12 +4,14 @@ import {
   Logger,
   OnApplicationShutdown,
   OnModuleInit,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { DataSource, Repository } from 'typeorm';
 import { isAddress } from 'viem';
+import { AuthService } from '../auth/auth.service';
 import { cmpStr, isPositive } from '../common/money.util';
 import { WithdrawalsConfig } from '../config/configuration';
 import { PaymentEntity } from '../database/entities/payment.entity';
@@ -26,6 +28,8 @@ export interface WithdrawRequest {
   amount: string;
   toAddress: string;
   idempotencyKey: string;
+  /** Código de Google Authenticator (TOTP) que autoriza el retiro. */
+  totpCode?: string;
 }
 
 /**
@@ -52,10 +56,32 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
     private readonly ledger: LedgerService,
     private readonly custody: CustodyService,
     private readonly evm: EvmService,
+    private readonly auth: AuthService,
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<WithdrawalsConfig>('withdrawals');
+  }
+
+  /**
+   * Step-up auth: el retiro DEBE estar autorizado con Google Authenticator (TOTP).
+   * Garantiza que sea el dueño de la cuenta quien autoriza la salida de fondos.
+   */
+  private async assertStepUp(userId: string, totpCode?: string): Promise<void> {
+    const user = await this.auth.getById(userId);
+    if (!user.totpEnabled) {
+      throw new BadRequestException(
+        'Habilita Google Authenticator (2FA) en tu cuenta antes de retirar fondos',
+      );
+    }
+    if (!totpCode) {
+      throw new BadRequestException(
+        'Código de Google Authenticator requerido para autorizar el retiro',
+      );
+    }
+    if (!this.auth.verifyTotp(user, totpCode)) {
+      throw new UnauthorizedException('Código de Google Authenticator inválido');
+    }
   }
 
   onModuleInit(): void {
@@ -73,7 +99,7 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
 
   /** Crea un retiro: valida, coloca el hold y lo deja en `processing` (broadcast async). */
   async request(req: WithdrawRequest): Promise<PaymentEntity> {
-    const { userId, asset, amount, toAddress, idempotencyKey } = req;
+    const { userId, asset, amount, toAddress, idempotencyKey, totpCode } = req;
     if (asset !== WITHDRAWABLE_ASSET) {
       throw new BadRequestException(
         `Solo se puede retirar ${WITHDRAWABLE_ASSET} on-chain por ahora`,
@@ -85,6 +111,9 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
 
     const existing = await this.payments.findOne({ where: { userId, idempotencyKey } });
     if (existing) return existing;
+
+    // Autorización fuerte (Google Authenticator) ANTES de mover nada.
+    await this.assertStepUp(userId, totpCode);
 
     try {
       return await this.dataSource.transaction(async (manager) => {

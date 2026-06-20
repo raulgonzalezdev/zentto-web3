@@ -1,8 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Matches } from 'class-validator';
+import { IsOptional, IsString, Matches } from 'class-validator';
 
 const DECIMAL = /^\d+(\.\d+)?$/;
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const TOTP = /^\d{6}$/;
 
 export class WithdrawDto {
   @ApiProperty({ example: 'USDC' })
@@ -18,4 +19,13 @@ export class WithdrawDto {
   @IsString()
   @Matches(EVM_ADDRESS, { message: 'toAddress debe ser una address EVM válida' })
   toAddress!: string;
+
+  @ApiProperty({
+    example: '123456',
+    description: 'Código de Google Authenticator (TOTP, 6 dígitos)',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(TOTP, { message: 'totpCode debe ser de 6 dígitos' })
+  totpCode?: string;
 }
