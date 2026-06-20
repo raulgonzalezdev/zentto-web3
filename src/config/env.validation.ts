@@ -28,7 +28,12 @@ export const envValidationSchema = Joi.object({
   AML_HIGH_RISK_THRESHOLD: Joi.number().min(0).max(100).default(70),
   AML_STRUCTURING_AMOUNT: Joi.number().min(0).default(9000),
 
+  AI_PROVIDER: Joi.string()
+    .valid('auto', 'anthropic', 'openai', 'deepseek', 'none')
+    .default('auto'),
   ANTHROPIC_API_KEY: Joi.string().allow('').default(''),
-  AI_MODEL: Joi.string().default('claude-opus-4-8'),
+  OPENAI_API_KEY: Joi.string().allow('').default(''),
+  OPENAI_BASE_URL: Joi.string().default('https://api.openai.com/v1'),
+  AI_MODEL: Joi.string().allow('').default(''),
   AI_EFFORT: Joi.string().valid('low', 'medium', 'high', 'max').default('medium'),
 });

@@ -35,9 +35,20 @@ export interface AmlConfig {
   structuringAmount: number;
 }
 
+export type AiProvider = 'auto' | 'anthropic' | 'openai' | 'deepseek' | 'none';
+
 export interface AiConfig {
-  apiKey: string;
+  /** Proveedor de IA. 'auto' elige según las keys presentes; 'none' fuerza el generador determinista. */
+  provider: AiProvider;
+  /** Clave Anthropic (Claude). */
+  anthropicApiKey: string;
+  /** Clave para el proveedor compatible OpenAI (OpenAI o DeepSeek). */
+  openaiApiKey: string;
+  /** Base URL compatible OpenAI (OpenAI: api.openai.com/v1 · DeepSeek: api.deepseek.com/v1). */
+  openaiBaseUrl: string;
+  /** Override de modelo. Vacío => default por proveedor. */
   model: string;
+  /** Esfuerzo de razonamiento (solo Anthropic). */
   effort: 'low' | 'medium' | 'high' | 'max';
 }
 
@@ -71,8 +82,11 @@ export default () => ({
     structuringAmount: parseInt(process.env.AML_STRUCTURING_AMOUNT ?? '9000', 10),
   } satisfies AmlConfig,
   ai: {
-    apiKey: process.env.ANTHROPIC_API_KEY ?? '',
-    model: process.env.AI_MODEL ?? 'claude-opus-4-8',
+    provider: (process.env.AI_PROVIDER ?? 'auto') as AiProvider,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+    openaiApiKey: process.env.OPENAI_API_KEY ?? '',
+    openaiBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
+    model: process.env.AI_MODEL ?? '',
     effort: (process.env.AI_EFFORT ?? 'medium') as AiConfig['effort'],
   } satisfies AiConfig,
 });
