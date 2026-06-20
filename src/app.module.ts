@@ -19,6 +19,7 @@ import { envValidationSchema } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { IndexerModule } from './indexer/indexer.module';
+import { KycModule } from './kyc/kyc.module';
 import { MiningModule } from './mining/mining.module';
 import { PaymentsModule } from './payments/payments.module';
 import { P2pModule } from './p2p/p2p.module';
@@ -53,6 +54,7 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     CustodyModule,
     IndexerModule,
     WithdrawalsModule,
+    KycModule,
     HealthModule,
   ],
   providers: [

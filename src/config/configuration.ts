@@ -66,6 +66,13 @@ export interface CustodyConfig {
   mnemonic: string;
 }
 
+export interface KycConfig {
+  /** Proveedor de liveness/autenticidad: 'manual' (revisión a mano) | 'didit'. */
+  provider: 'manual' | 'didit';
+  /** API key de Didit (vacío => cae a revisión manual). */
+  diditApiKey: string;
+}
+
 export interface WithdrawalsConfig {
   /** Habilita los workers de broadcast + reconciliación de retiros on-chain. */
   enabled: boolean;
@@ -151,6 +158,10 @@ export default () => ({
   custody: {
     mnemonic: process.env.CUSTODY_MNEMONIC ?? '',
   } satisfies CustodyConfig,
+  kyc: {
+    provider: (process.env.KYC_PROVIDER ?? 'manual') as KycConfig['provider'],
+    diditApiKey: process.env.DIDIT_API_KEY ?? '',
+  } satisfies KycConfig,
   indexer: {
     enabled: (process.env.DEPOSIT_INDEXER_ENABLED ?? 'false') === 'true',
     confirmations: parseInt(process.env.EVM_CONFIRMATIONS ?? '3', 10),

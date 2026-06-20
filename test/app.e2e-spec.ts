@@ -216,6 +216,40 @@ describe('Zentto Web3 (e2e)', () => {
     expect(usdc?.available).toBe('70'); // disponible = saldo − hold
   });
 
+  it('KYC: nombre en lista OFAC → amlMatch true (no auto-aprueba)', async () => {
+    const sub = await agent
+      .post('/api/kyc/submit')
+      .set('x-csrf-token', csrf)
+      .send({ fullName: 'Viktor Bout', documentType: 'id_card', documentNumber: 'A1' })
+      .expect(201);
+    expect(sub.body.amlMatch).toBe(true);
+    expect(sub.body.status).toBe('in_review');
+  });
+
+  it('KYC: MRZ válida → in_review (mrzValid true), operador aprueba → approved', async () => {
+    const mrz =
+      'P<UTOERIKSSON<<ANNA<MARIA'.padEnd(44, '<') + 'L898902C36UTO7408122F1204159ZE184226B<<<<<10';
+    const sub = await agent
+      .post('/api/kyc/submit')
+      .set('x-csrf-token', csrf)
+      .send({ fullName: 'ANNA MARIA ERIKSSON', documentType: 'passport', mrz })
+      .expect(201);
+    expect(sub.body.status).toBe('in_review');
+    expect(sub.body.mrzValid).toBe(true);
+    expect(sub.body.amlMatch).toBe(false);
+
+    const id = sub.body.id as string;
+    const dec = await agent
+      .post(`/api/kyc/${id}/decision`)
+      .set('x-csrf-token', csrf)
+      .send({ approve: true, reason: 'Documento OK' })
+      .expect(201);
+    expect(dec.body.status).toBe('approved');
+
+    const st = await agent.get('/api/kyc/status').expect(200);
+    expect(st.body.status).toBe('approved');
+  });
+
   it('logout cierra la sesión', async () => {
     await agent.post('/api/auth/logout').set('x-csrf-token', csrf).expect(201);
     await agent.get('/api/auth/me').expect(401);
