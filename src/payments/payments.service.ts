@@ -83,7 +83,7 @@ export class PaymentsService {
     if (cmpStr(amount, String(this.cfg.faucetMax)) > 0) {
       throw new BadRequestException(`Máximo por acreditación: ${this.cfg.faucetMax}`);
     }
-    return this.runIdempotent(idempotencyKey, async () => {
+    return this.runIdempotent(userId, idempotencyKey, async () => {
       return this.dataSource.transaction(async (manager) => {
         const issuer = await this.ledger.getOrCreateAccount(
           'system',
@@ -136,7 +136,7 @@ export class PaymentsService {
     if (!recipient) throw new BadRequestException('El destinatario no existe');
     if (recipient.id === userId) throw new BadRequestException('No puedes transferirte a ti mismo');
 
-    return this.runIdempotent(idempotencyKey, async () => {
+    return this.runIdempotent(userId, idempotencyKey, async () => {
       return this.dataSource.transaction(async (manager) => {
         const from = await this.ledger.getOrCreateAccount('user', userId, asset, manager);
         const to = await this.ledger.getOrCreateAccount('user', recipient.id, asset, manager);
@@ -175,16 +175,17 @@ export class PaymentsService {
    * releyendo el pago existente (nunca se duplica).
    */
   private async runIdempotent(
+    userId: string,
     idempotencyKey: string,
     op: () => Promise<PaymentEntity>,
   ): Promise<PaymentEntity> {
-    const existing = await this.payments.findOne({ where: { idempotencyKey } });
+    const existing = await this.payments.findOne({ where: { userId, idempotencyKey } });
     if (existing) return existing;
     try {
       return await op();
     } catch (e) {
       if (isUniqueViolation(e)) {
-        const dup = await this.payments.findOne({ where: { idempotencyKey } });
+        const dup = await this.payments.findOne({ where: { userId, idempotencyKey } });
         if (dup) return dup;
       }
       throw e;

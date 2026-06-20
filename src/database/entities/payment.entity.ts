@@ -1,4 +1,12 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  PrimaryColumn,
+  Unique,
+  UpdateDateColumn,
+} from 'typeorm';
 
 export type PaymentType = 'credit' | 'transfer' | 'withdrawal' | 'deposit';
 export type PaymentStatus =
@@ -16,11 +24,14 @@ export type PaymentStatus =
  * o de la red NUNCA dupliquen ni dejen estados ambiguos.
  */
 @Entity({ name: 'payments' })
+@Unique(['userId', 'idempotencyKey'])
 export class PaymentEntity {
   @PrimaryColumn({ type: 'varchar', length: 36 })
   id!: string;
 
-  @Index({ unique: true })
+  // Idempotencia POR USUARIO (estilo Stripe): la misma key de dos usuarios
+  // distintos es independiente; ver @Unique(['userId','idempotencyKey']).
+  @Index()
   @Column({ type: 'varchar', length: 100 })
   idempotencyKey!: string;
 

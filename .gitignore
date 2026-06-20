@@ -19,6 +19,9 @@ npm-debug.log*
 .env.local
 .env.*.local
 
+# Compose override local (dev-only: faucet, etc.)
+docker-compose.override.yml
+
 # Editor / OS
 .idea/
 .vscode/
