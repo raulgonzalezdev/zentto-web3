@@ -158,9 +158,14 @@ export default () => ({
     faucetMax: parseInt(process.env.FAUCET_MAX ?? '1000', 10),
   } satisfies LedgerConfig,
   evm: {
-    // RPC público de Sepolia (soporta eth_getLogs para el indexer, sin API key).
-    // En producción usar Alchemy/Infura/QuickNode (archive + rate limits altos).
-    rpcUrl: process.env.EVM_RPC_URL ?? 'https://sepolia.drpc.org',
+    // RPC: si hay ALCHEMY_API_KEY usa Alchemy (archive getLogs, rate limits altos,
+    // base para webhooks de depósito). Si se fija EVM_RPC_URL, manda ese. Si no,
+    // cae al público de Sepolia (drpc, soporta eth_getLogs sin API key).
+    rpcUrl:
+      process.env.EVM_RPC_URL ||
+      (process.env.ALCHEMY_API_KEY
+        ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+        : 'https://sepolia.drpc.org'),
     chainId: parseInt(process.env.EVM_CHAIN_ID ?? '11155111', 10),
     chainName: process.env.EVM_CHAIN_NAME ?? 'Sepolia',
     explorerUrl: process.env.EVM_EXPLORER_URL ?? 'https://sepolia.etherscan.io',

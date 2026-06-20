@@ -57,7 +57,10 @@ export const envValidationSchema = Joi.object({
   FAUCET_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   FAUCET_MAX: Joi.number().min(0).default(1000),
 
-  EVM_RPC_URL: Joi.string().default('https://sepolia.drpc.org'),
+  // Si se define, EVM + indexer usan Alchemy (https://eth-sepolia.g.alchemy.com/v2/<key>).
+  ALCHEMY_API_KEY: Joi.string().allow('').default(''),
+  // Override directo del RPC; tiene prioridad sobre ALCHEMY_API_KEY.
+  EVM_RPC_URL: Joi.string().allow('').optional(),
   EVM_CHAIN_ID: Joi.number().default(11155111),
   EVM_CHAIN_NAME: Joi.string().default('Sepolia'),
   EVM_EXPLORER_URL: Joi.string().default('https://sepolia.etherscan.io'),
