@@ -66,6 +66,13 @@ export interface CustodyConfig {
   mnemonic: string;
 }
 
+export interface WithdrawalsConfig {
+  /** Habilita los workers de broadcast + reconciliación de retiros on-chain. */
+  enabled: boolean;
+  /** Confirmaciones requeridas para dar un retiro por completado. */
+  confirmations: number;
+}
+
 export interface LedgerConfig {
   /** Assets soportados por el ledger (ej. USDT, USDC). */
   assets: string[];
@@ -149,6 +156,10 @@ export default () => ({
     confirmations: parseInt(process.env.EVM_CONFIRMATIONS ?? '3', 10),
     scanRange: parseInt(process.env.DEPOSIT_SCAN_RANGE ?? '2000', 10),
   } satisfies IndexerConfig,
+  withdrawals: {
+    enabled: (process.env.WITHDRAWALS_ENABLED ?? 'false') === 'true',
+    confirmations: parseInt(process.env.EVM_CONFIRMATIONS ?? '3', 10),
+  } satisfies WithdrawalsConfig,
   ledger: {
     assets: (process.env.LEDGER_ASSETS ?? 'USDT,USDC')
       .split(',')
