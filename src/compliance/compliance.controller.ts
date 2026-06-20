@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../auth/decorators/public.decorator';
 import { ComplianceService } from './compliance.service';
 import { ScreenDto } from './dto/screen.dto';
 
@@ -8,6 +9,7 @@ import { ScreenDto } from './dto/screen.dto';
 export class ComplianceController {
   constructor(private readonly compliance: ComplianceService) {}
 
+  @Public()
   @Get('status')
   @ApiOperation({ summary: 'Indica si la generación de informes con IA está activa' })
   status() {

@@ -1,8 +1,12 @@
 import { BullModule } from '@nestjs/bullmq';
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { AuthModule } from './auth/auth.module';
+import { CsrfGuard } from './auth/guards/csrf.guard';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { CsrfCookieMiddleware } from './auth/middleware/csrf-cookie.middleware';
 import { BlockchainModule } from './blockchain/blockchain.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -29,6 +33,7 @@ import { WalletsModule } from './wallets/wallets.module';
         return { connection: { host: redis.host, port: redis.port } };
       },
     }),
+    AuthModule,
     BlockchainModule,
     WalletsModule,
     MiningModule,
@@ -39,6 +44,13 @@ import { WalletsModule } from './wallets/wallets.module';
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
+    // Orden: primero autenticación (JWT en cookie), luego CSRF en mutaciones.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: CsrfGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CsrfCookieMiddleware).forRoutes('*');
+  }
+}

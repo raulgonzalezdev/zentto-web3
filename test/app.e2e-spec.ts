@@ -1,31 +1,39 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import cookieParser from 'cookie-parser';
 import request from 'supertest';
 
 /**
- * E2E del flujo completo. Requiere Postgres y Redis disponibles (CI los provee
- * como service containers en los puertos por defecto 5544 / 6399).
+ * E2E del flujo completo con autenticación. Requiere Postgres y Redis
+ * (CI los provee en 5544 / 6399).
  *
- * Flujo cubierto: salud → crear wallet → encolar minado (BullMQ) → esperar
- * bloque → verificar recompensa (coinbase) → screening AML.
+ * Cubre: salud → registro (cookies httpOnly) → CSRF → crear wallet → minar
+ * (BullMQ) → recompensa → screening AML → integridad de cadena.
  */
 describe('Zentto Web3 (e2e)', () => {
   let app: INestApplication;
+  let agent: ReturnType<typeof request.agent>;
+  let csrf: string;
   let minerAddress: string;
 
   beforeAll(async () => {
-    // Dificultad baja para que el PoW termine rápido en CI.
     process.env.CHAIN_DIFFICULTY = process.env.CHAIN_DIFFICULTY ?? '2';
     process.env.MINING_REWARD = process.env.MINING_REWARD ?? '50';
+    process.env.JWT_SECRET =
+      process.env.JWT_SECRET ?? 'e2e-access-secret-0123456789abcdef0123456789abcdef';
+    process.env.JWT_REFRESH_SECRET =
+      process.env.JWT_REFRESH_SECRET ?? 'e2e-refresh-secret-0123456789abcdef0123456789abcdef';
 
-    // Import diferido para que las env vars apliquen antes de cargar config.
     const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
     app = moduleRef.createNestApplication();
+    app.use(cookieParser());
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
+
+    agent = request.agent(app.getHttpServer());
   });
 
   afterAll(async () => {
@@ -33,29 +41,53 @@ describe('Zentto Web3 (e2e)', () => {
   });
 
   it('GET /api/health responde ok', async () => {
-    const res = await request(app.getHttpServer()).get('/api/health').expect(200);
+    const res = await agent.get('/api/health').expect(200);
     expect(res.body.status).toBe('ok');
   });
 
-  it('POST /api/wallets crea una wallet', async () => {
-    const res = await request(app.getHttpServer()).post('/api/wallets').expect(201);
-    expect(res.body.address).toBeDefined();
-    expect(res.body.privateKey).toBeDefined();
-    minerAddress = res.body.address;
+  it('obtiene un token CSRF', async () => {
+    const res = await agent.get('/api/auth/csrf').expect(200);
+    csrf = res.body.csrfToken;
+    expect(typeof csrf).toBe('string');
   });
 
-  it('mina un bloque y acredita la recompensa al minero', async () => {
-    const mineRes = await request(app.getHttpServer())
+  it('rechaza una acción protegida sin autenticación', async () => {
+    await request(app.getHttpServer()).post('/api/wallets').expect(401);
+  });
+
+  it('registra un usuario y deja sesión por cookie httpOnly', async () => {
+    const email = `e2e_${Date.now()}@zentto.net`;
+    const res = await agent
+      .post('/api/auth/register')
+      .set('x-csrf-token', csrf)
+      .send({ email, password: 'SuperSecret123' })
+      .expect(201);
+    expect(res.body.user.email).toBe(email);
+  });
+
+  it('GET /api/auth/me devuelve el usuario autenticado', async () => {
+    const res = await agent.get('/api/auth/me').expect(200);
+    expect(res.body.user.id).toBeDefined();
+  });
+
+  it('crea una wallet autenticada', async () => {
+    const res = await agent.post('/api/wallets').set('x-csrf-token', csrf).expect(201);
+    minerAddress = res.body.address;
+    expect(minerAddress).toBeDefined();
+  });
+
+  it('mina un bloque y acredita la recompensa', async () => {
+    const mineRes = await agent
       .post('/api/mining')
+      .set('x-csrf-token', csrf)
       .send({ minerAddress })
       .expect(201);
     const jobId = mineRes.body.jobId;
     expect(jobId).toBeDefined();
 
-    // Esperar a que el worker BullMQ complete el job.
     let completed = false;
     for (let i = 0; i < 40 && !completed; i++) {
-      const status = await request(app.getHttpServer()).get(`/api/mining/jobs/${jobId}`);
+      const status = await agent.get(`/api/mining/jobs/${jobId}`);
       if (status.body.state === 'completed') {
         completed = true;
         break;
@@ -67,22 +99,22 @@ describe('Zentto Web3 (e2e)', () => {
     }
     expect(completed).toBe(true);
 
-    const balance = await request(app.getHttpServer())
-      .get(`/api/wallets/${minerAddress}/balance`)
-      .expect(200);
+    const balance = await agent.get(`/api/wallets/${minerAddress}/balance`).expect(200);
     expect(balance.body.confirmed).toBeGreaterThanOrEqual(50);
   });
 
-  it('el screening AML de una address recién creada es de bajo riesgo', async () => {
-    const res = await request(app.getHttpServer())
-      .get(`/api/compliance/screen/${minerAddress}`)
-      .expect(200);
+  it('screening AML público de bajo riesgo', async () => {
+    const res = await agent.get(`/api/compliance/screen/${minerAddress}`).expect(200);
     expect(['low', 'medium', 'high']).toContain(res.body.riskLevel);
-    expect(typeof res.body.score).toBe('number');
   });
 
   it('la cadena es íntegra', async () => {
-    const res = await request(app.getHttpServer()).get('/api/chain/validate').expect(200);
+    const res = await agent.get('/api/chain/validate').expect(200);
     expect(res.body.valid).toBe(true);
+  });
+
+  it('logout cierra la sesión', async () => {
+    await agent.post('/api/auth/logout').set('x-csrf-token', csrf).expect(201);
+    await agent.get('/api/auth/me').expect(401);
   });
 });

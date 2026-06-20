@@ -80,6 +80,9 @@ jobs:
       REDIS_PORT: 6399
       CHAIN_DIFFICULTY: '2'
       MINING_REWARD: '50'
+      # Secretos efímeros por ejecución (solo para los tests; no son de producción).
+      JWT_SECRET: ci-e2e-access-${{ github.run_id }}-0123456789abcdef0123456789abcdef
+      JWT_REFRESH_SECRET: ci-e2e-refresh-${{ github.run_id }}-0123456789abcdef0123456789abcdef
     steps:
       - uses: actions/checkout@v4
 

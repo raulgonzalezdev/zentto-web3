@@ -1,8 +1,10 @@
 import { Controller, DefaultValuePipe, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Public } from '../auth/decorators/public.decorator';
 import { CrossChainService } from './cross-chain.service';
 
 @ApiTags('analytics')
+@Public()
 @Controller('analytics')
 export class AnalyticsController {
   constructor(private readonly crossChain: CrossChainService) {}

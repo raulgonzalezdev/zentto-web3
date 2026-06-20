@@ -28,7 +28,24 @@ export const envValidationSchema = Joi.object({
   AML_HIGH_RISK_THRESHOLD: Joi.number().min(0).max(100).default(70),
   AML_STRUCTURING_AMOUNT: Joi.number().min(0).default(9000),
 
+  AI_PROVIDER: Joi.string()
+    .valid('auto', 'anthropic', 'openai', 'deepseek', 'none')
+    .default('auto'),
   ANTHROPIC_API_KEY: Joi.string().allow('').default(''),
-  AI_MODEL: Joi.string().default('claude-opus-4-8'),
+  OPENAI_API_KEY: Joi.string().allow('').default(''),
+  OPENAI_BASE_URL: Joi.string().default('https://api.openai.com/v1'),
+  AI_MODEL: Joi.string().allow('').default(''),
   AI_EFFORT: Joi.string().valid('low', 'medium', 'high', 'max').default('medium'),
+
+  // Secretos obligatorios y fuertes (sin default usable). Genéralos con:
+  //   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+  JWT_SECRET: Joi.string().min(32).required(),
+  JWT_REFRESH_SECRET: Joi.string().min(32).required(),
+  JWT_ACCESS_TTL: Joi.string().default('15m'),
+  JWT_REFRESH_TTL: Joi.string().default('7d'),
+  BCRYPT_ROUNDS: Joi.number().min(8).max(15).default(12),
+  TOTP_ISSUER: Joi.string().default('Zentto Web3'),
+  COOKIE_DOMAIN: Joi.string().allow('').default(''),
+  COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
+  COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
 });

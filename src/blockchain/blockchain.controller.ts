@@ -1,8 +1,10 @@
 import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../auth/decorators/public.decorator';
 import { BlockchainService } from './blockchain.service';
 
 @ApiTags('blockchain')
+@Public()
 @Controller()
 export class BlockchainController {
   constructor(private readonly blockchain: BlockchainService) {}
