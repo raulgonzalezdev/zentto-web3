@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AuthModule } from './auth/auth.module';
 import { CsrfGuard } from './auth/guards/csrf.guard';
@@ -16,6 +17,7 @@ import { envValidationSchema } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MiningModule } from './mining/mining.module';
+import { P2pModule } from './p2p/p2p.module';
 import { WalletsModule } from './wallets/wallets.module';
 
 @Module({
@@ -25,6 +27,7 @@ import { WalletsModule } from './wallets/wallets.module';
       load: [configuration],
       validationSchema: envValidationSchema,
     }),
+    EventEmitterModule.forRoot(),
     DatabaseModule,
     BullModule.forRootAsync({
       inject: [ConfigService],
@@ -39,6 +42,7 @@ import { WalletsModule } from './wallets/wallets.module';
     MiningModule,
     ComplianceModule,
     AnalyticsModule,
+    P2pModule,
     HealthModule,
   ],
   providers: [

@@ -6,11 +6,13 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { ChainConfig } from '../config/configuration';
 import { BlockEntity } from '../database/entities/block.entity';
 import { TransactionEntity } from '../database/entities/transaction.entity';
+import { BlockSnapshot, CHAIN_EVENTS, TransactionSnapshot } from '../p2p/p2p.types';
 import { Block } from './domain/block';
 import { Transaction } from './domain/transaction';
 
@@ -38,6 +40,7 @@ export class BlockchainService implements OnModuleInit {
     @InjectRepository(BlockEntity) private readonly blocks: Repository<BlockEntity>,
     @InjectRepository(TransactionEntity) private readonly txs: Repository<TransactionEntity>,
     private readonly dataSource: DataSource,
+    private readonly events: EventEmitter2,
     config: ConfigService,
   ) {
     this.chainCfg = config.getOrThrow<ChainConfig>('chain');
@@ -52,17 +55,36 @@ export class BlockchainService implements OnModuleInit {
 
   // ───────────────────────────── Génesis ─────────────────────────────
 
+  // Génesis DETERMINISTA: timestamp e id fijos para que todos los nodos de la
+  // red P2P produzcan exactamente el mismo bloque 0 (mismo hash). Sin esto las
+  // cadenas de distintos nodos nunca reconciliarían.
+  private static readonly GENESIS_TIMESTAMP = 1700000000000;
+
   private async createGenesisBlock(): Promise<void> {
     const txList: Transaction[] = [];
 
-    // Premine opcional: acuña saldo inicial a una address para poder operar.
+    // Premine opcional y determinista (id + timestamp fijos).
     if (this.chainCfg.genesisPremineAddress) {
       txList.push(
-        new Transaction(null, this.chainCfg.genesisPremineAddress, 1_000_000, 0, Date.now()),
+        new Transaction(
+          null,
+          this.chainCfg.genesisPremineAddress,
+          1_000_000,
+          0,
+          BlockchainService.GENESIS_TIMESTAMP,
+          null,
+          'genesis-premine',
+        ),
       );
     }
 
-    const genesis = new Block(0, Date.now(), txList, '0'.repeat(64), this.chainCfg.difficulty);
+    const genesis = new Block(
+      0,
+      BlockchainService.GENESIS_TIMESTAMP,
+      txList,
+      '0'.repeat(64),
+      this.chainCfg.difficulty,
+    );
     genesis.mine();
     await this.persistBlock(genesis, null);
     this.logger.log(`Bloque génesis creado (hash=${genesis.hash})`);
@@ -168,7 +190,10 @@ export class BlockchainService implements OnModuleInit {
       );
     }
 
-    return this.persistTransaction(tx, 'pending', null);
+    const saved = await this.persistTransaction(tx, 'pending', null);
+    // Notifica a la capa P2P para propagar la tx por la red (solo en acciones locales).
+    this.events.emit(CHAIN_EVENTS.TX_ADDED, this.txToSnapshot(tx));
+    return saved;
   }
 
   // ─────────────────────────── Minado ───────────────────────────
@@ -239,6 +264,8 @@ export class BlockchainService implements OnModuleInit {
       }
     });
 
+    // Propaga el bloque recién minado a la red P2P.
+    this.events.emit(CHAIN_EVENTS.BLOCK_MINED, this.blockToSnapshot(block, minerAddress));
     return this.getLatestBlock();
   }
 
@@ -343,5 +370,183 @@ export class BlockchainService implements OnModuleInit {
     entity.status = status;
     entity.blockIndex = blockIndex;
     return entity;
+  }
+
+  // ─────────────────────────── P2P / sincronización ───────────────────────────
+
+  /** Serializa la cadena completa para transporte por la red. */
+  async getChainSnapshot(): Promise<BlockSnapshot[]> {
+    const all = await this.getAllBlocks();
+    return all.map((b) => ({
+      index: b.index,
+      timestamp: Number(b.timestamp),
+      previousHash: b.previousHash,
+      hash: b.hash,
+      merkleRoot: b.merkleRoot,
+      nonce: b.nonce,
+      difficulty: b.difficulty,
+      minerAddress: b.minerAddress,
+      transactions: b.transactions.map((t) => this.entityToSnapshot(t)),
+    }));
+  }
+
+  /**
+   * Aplica un bloque recibido de la red si extiende exactamente nuestra punta.
+   * `mismatch` => hay un hueco o un fork: el caller debe pedir la cadena completa.
+   */
+  async appendExternalBlock(
+    snap: BlockSnapshot,
+  ): Promise<{ status: 'accepted' | 'ignored' | 'mismatch' | 'rejected'; reason?: string }> {
+    const latest = await this.getLatestBlock();
+    if (snap.index <= latest.index) return { status: 'ignored', reason: 'ya conocido' };
+    if (snap.index !== latest.index + 1 || snap.previousHash !== latest.hash) {
+      return { status: 'mismatch', reason: 'hueco o fork' };
+    }
+
+    const block = this.rebuildBlock(snap);
+    if (
+      block.hash !== snap.hash ||
+      block.merkleRoot !== snap.merkleRoot ||
+      !block.hasValidProof() ||
+      !block.hasValidTransactions()
+    ) {
+      return { status: 'rejected', reason: 'bloque inválido' };
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.getRepository(BlockEntity).save(this.toBlockEntity(block, snap.minerAddress));
+      for (const t of block.transactions) {
+        // upsert por id: si la tx existía como pendiente, pasa a minada.
+        await manager
+          .getRepository(TransactionEntity)
+          .save(this.toTxEntity(t, 'mined', snap.index));
+      }
+    });
+    return { status: 'accepted' };
+  }
+
+  /**
+   * Resolución de forks por la regla de la cadena válida más larga: reemplaza la
+   * cadena local si la entrante es más larga y válida de extremo a extremo.
+   */
+  async replaceChain(
+    snaps: BlockSnapshot[],
+  ): Promise<{ status: 'replaced' | 'ignored' | 'rejected'; reason?: string }> {
+    if (snaps.length === 0) return { status: 'rejected', reason: 'cadena vacía' };
+    const localHeight = await this.getHeight();
+    if (snaps.length <= localHeight) return { status: 'ignored', reason: 'no es más larga' };
+    if (!this.validateChainSnapshots(snaps))
+      return { status: 'rejected', reason: 'cadena inválida' };
+
+    // Conserva las tx pendientes locales que no quedan incluidas en la cadena entrante.
+    const incomingTxIds = new Set(snaps.flatMap((b) => b.transactions.map((t) => t.id)));
+    const pending = await this.getPending();
+    const keepPending = pending.filter((p) => !incomingTxIds.has(p.id));
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.getRepository(TransactionEntity).createQueryBuilder().delete().execute();
+      await manager.getRepository(BlockEntity).createQueryBuilder().delete().execute();
+      for (const s of snaps) {
+        const block = this.rebuildBlock(s);
+        await manager.getRepository(BlockEntity).save(this.toBlockEntity(block, s.minerAddress));
+        for (const t of block.transactions) {
+          await manager.getRepository(TransactionEntity).save(this.toTxEntity(t, 'mined', s.index));
+        }
+      }
+      for (const p of keepPending) {
+        p.status = 'pending';
+        p.blockIndex = null;
+        await manager.getRepository(TransactionEntity).save(p);
+      }
+    });
+    return { status: 'replaced' };
+  }
+
+  /** Aplica una transacción recibida de la red al mempool (si es válida y nueva). */
+  async addExternalTransaction(
+    snap: TransactionSnapshot,
+  ): Promise<{ status: 'accepted' | 'ignored' | 'rejected'; reason?: string }> {
+    const existing = await this.txs.findOne({ where: { id: snap.id } });
+    if (existing) return { status: 'ignored', reason: 'ya conocida' };
+
+    const tx = this.snapshotToTx(snap);
+    if (!tx.isValid()) return { status: 'rejected', reason: 'firma inválida' };
+
+    await this.persistTransaction(tx, 'pending', null);
+    return { status: 'accepted' };
+  }
+
+  // ───────────────── helpers de snapshot / validación de cadena ─────────────────
+
+  private validateChainSnapshots(snaps: BlockSnapshot[]): boolean {
+    for (let i = 0; i < snaps.length; i++) {
+      const s = snaps[i];
+      if (i === 0 && s.index !== 0) return false;
+      const block = this.rebuildBlock(s);
+      if (block.hash !== s.hash) return false;
+      if (block.merkleRoot !== s.merkleRoot) return false;
+      if (!block.hasValidProof()) return false;
+      if (!block.hasValidTransactions()) return false;
+      if (i > 0 && s.previousHash !== snaps[i - 1].hash) return false;
+    }
+    return true;
+  }
+
+  private rebuildBlock(snap: BlockSnapshot): Block {
+    const txs = snap.transactions.map((t) => this.snapshotToTx(t));
+    const block = new Block(snap.index, snap.timestamp, txs, snap.previousHash, snap.difficulty);
+    block.nonce = snap.nonce;
+    block.hash = block.calculateHash();
+    return block;
+  }
+
+  private snapshotToTx(s: TransactionSnapshot): Transaction {
+    return new Transaction(
+      s.fromAddress,
+      s.toAddress,
+      s.amount,
+      s.fee,
+      s.timestamp,
+      s.signature,
+      s.id,
+    );
+  }
+
+  private txToSnapshot(tx: Transaction): TransactionSnapshot {
+    return {
+      id: tx.id,
+      fromAddress: tx.fromAddress,
+      toAddress: tx.toAddress,
+      amount: tx.amount,
+      fee: tx.fee,
+      timestamp: tx.timestamp,
+      signature: tx.signature,
+    };
+  }
+
+  private entityToSnapshot(t: TransactionEntity): TransactionSnapshot {
+    return {
+      id: t.id,
+      fromAddress: t.fromAddress,
+      toAddress: t.toAddress,
+      amount: Number(t.amount),
+      fee: Number(t.fee),
+      timestamp: Number(t.timestamp),
+      signature: t.signature,
+    };
+  }
+
+  private blockToSnapshot(block: Block, minerAddress: string | null): BlockSnapshot {
+    return {
+      index: block.index,
+      timestamp: block.timestamp,
+      previousHash: block.previousHash,
+      hash: block.hash,
+      merkleRoot: block.merkleRoot,
+      nonce: block.nonce,
+      difficulty: block.difficulty,
+      minerAddress,
+      transactions: block.transactions.map((t) => this.txToSnapshot(t)),
+    };
   }
 }

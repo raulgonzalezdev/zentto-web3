@@ -97,6 +97,28 @@ Pasos que ejecuta:
 
 ---
 
+## 4.b Red P2P (multi-nodo)
+
+Cada nodo puede formar una **red P2P real** por WebSocket: gossip de transacciones y bloques, sincronización de cadena al conectar y **resolución de forks por la cadena válida más larga**. El bloque génesis es **determinista** (mismo timestamp e ids fijos) para que todos los nodos compartan el bloque 0.
+
+```bash
+# Requiere JWT_SECRET / JWT_REFRESH_SECRET y DB_PASSWORD en .env
+docker compose -f docker-compose.p2p.yml up --build
+```
+
+Levanta **2 nodos independientes** (cada uno con su propia Postgres + Redis), peered entre sí:
+
+- Nodo 1: <http://localhost:7401/api> · Nodo 2: <http://localhost:7402/api>
+- Estado de la red: `GET /api/p2p/status` (peers conectados, altura, dedup).
+- Conectar un peer en runtime: `POST /api/p2p/peers { "url": "ws://host:6001" }`.
+
+Demo: mina un bloque en el nodo 1 (`POST /api/mining`) y verás que el nodo 2 sincroniza su cadena (misma altura, mismo hash de bloque) por gossip. Un nodo aislado funciona en modo standalone (`P2P_ENABLED=false`, por defecto).
+
+| Endpoint P2P | Descripción |
+|---|---|
+| `GET /api/p2p/status` | Peers conectados, altura, bloques/tx vistos |
+| `POST /api/p2p/peers` | Conectar a un peer nuevo en caliente |
+
 ## 5. Endpoints principales
 
 | Método | Ruta | Descripción |

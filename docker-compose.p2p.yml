@@ -1,0 +1,130 @@
+# ─────────────────────────────────────────────────────────────
+# Red P2P de demostración: 2 nodos independientes (cada uno con su
+# propia Postgres + Redis), conectados por WebSocket (gossip).
+#
+# Demuestra: difusión de tx/bloques, sincronización al conectar y
+# resolución de forks por la cadena válida más larga.
+#
+# Uso:
+#   # JWT_SECRET y JWT_REFRESH_SECRET deben estar en .env (genéralos):
+#   #   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+#   docker compose -f docker-compose.p2p.yml up --build
+#
+#   Nodo 1 API: http://localhost:7401/api   (Swagger en /api/docs)
+#   Nodo 2 API: http://localhost:7402/api
+#   Estado red: GET /api/p2p/status en cualquiera de los dos.
+#
+# Génesis determinista => ambos nodos arrancan con el mismo bloque 0
+# y la misma dificultad, condición necesaria para reconciliar cadenas.
+# ─────────────────────────────────────────────────────────────
+x-node-env: &node-env
+  NODE_ENV: production
+  API_PREFIX: api
+  CORS_ORIGIN: '*'
+  DB_PORT: 5432
+  DB_USER: web3
+  DB_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+  DB_NAME: zentto_web3
+  DB_SYNCHRONIZE: 'true'
+  REDIS_PORT: 6379
+  CHAIN_DIFFICULTY: ${CHAIN_DIFFICULTY:-3}
+  MINING_REWARD: ${MINING_REWARD:-50}
+  JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Define JWT_REFRESH_SECRET en .env}
+  P2P_ENABLED: 'true'
+  P2P_PORT: 6001
+
+services:
+  # ───────────────────────── Nodo 1 ─────────────────────────
+  node1-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: web3
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+      POSTGRES_DB: zentto_web3
+    volumes:
+      - node1-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U web3 -d zentto_web3']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [p2p-net]
+
+  node1-redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [p2p-net]
+
+  web3-node1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    environment:
+      <<: *node-env
+      PORT: 7401
+      DB_HOST: node1-db
+      REDIS_HOST: node1-redis
+      NODE_NAME: node-1
+      PEERS: ws://web3-node2:6001
+    ports:
+      - '7401:7401'
+    depends_on:
+      node1-db: { condition: service_healthy }
+      node1-redis: { condition: service_healthy }
+    networks: [p2p-net]
+
+  # ───────────────────────── Nodo 2 ─────────────────────────
+  node2-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: web3
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+      POSTGRES_DB: zentto_web3
+    volumes:
+      - node2-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U web3 -d zentto_web3']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [p2p-net]
+
+  node2-redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [p2p-net]
+
+  web3-node2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    environment:
+      <<: *node-env
+      PORT: 7402
+      DB_HOST: node2-db
+      REDIS_HOST: node2-redis
+      NODE_NAME: node-2
+      PEERS: ws://web3-node1:6001
+    ports:
+      - '7402:7402'
+    depends_on:
+      node2-db: { condition: service_healthy }
+      node2-redis: { condition: service_healthy }
+    networks: [p2p-net]
+
+volumes:
+  node1-db-data:
+  node2-db-data:
+
+networks:
+  p2p-net:
+    driver: bridge
