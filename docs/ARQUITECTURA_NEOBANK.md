@@ -55,6 +55,42 @@ No podemos tocar bolívares/pago móvil sin licencia o partner. Plan:
 | **4. P2P escrow → pago móvil** | Comprar/vender USDT con pago móvil | Medio-alto (operacional) |
 | **5. Mainnet + Tron + ramps + licencias** | Producción real (USDT-TRC20), partners, VASP | Alto |
 
+## KYC — verificación de identidad (al registrarse)
+Onboarding verificado tipo Kontigo/Meru, **vía proveedor** (no guardamos los documentos crudos):
+- Proveedor: **Sumsub / Didit / Persona**. SDK en la app móvil captura **pasaporte/cédula + selfie con prueba de vida (liveness) + face-match**.
+- El backend guarda solo el **estado** y el `applicantId` del proveedor; el proveedor custodia los documentos (menos riesgo y cumplimiento).
+- Estados: `not_started → pending → approved → rejected → more_info`. Webhook del proveedor actualiza el estado.
+- **Niveles/tiers** de KYC → definen **límites** (montos diarios, retiros). Sin KYC aprobado no se opera con dinero real (solo testnet/lectura).
+
+## Autorización por transacción (step-up auth)
+Garantizar que **el usuario autorice cada movimiento de dinero**:
+- **Vinculación a la transacción (no-repudio)**: el reto a firmar incluye los datos exactos (monto, destino, asset). Así la autorización vale **solo** para esa transacción.
+- **Mecanismos** (escalado por riesgo/monto):
+  - Montos bajos → **OTP TOTP** (ya tenemos 2FA) o push.
+  - Montos altos / retiros → **biometría** (huella/face) con **WebAuthn/passkeys** (clave ligada al dispositivo) — en móvil vía Capacitor biometric + clave device-bound.
+- **Reglas**: límites por nivel KYC, cooldown, lista blanca de destinos, detección de anomalías (AML) antes de pedir la firma.
+
+## Fiabilidad de transacciones — "que NO queden en el aire" (lo más crítico)
+El problema de Kontigo/Meru (tx colgadas) se resuelve con un **lifecycle determinista** estilo Binance/Stripe:
+
+1. **Idempotencia**: cada operación de dinero lleva una `idempotency-key` (única por intento). El server **deduplica** → reintentos del cliente/red nunca duplican ni dejan estados ambiguos.
+2. **Máquina de estados explícita** por transacción:
+   `created → authorized → pending_sign → broadcast → confirming → confirmed`
+   con ramas `failed / expired / reversed`. Cada transición es atómica y auditable.
+3. **Ledger primero (doble entrada) + outbox**: el asiento contable y el efecto on-chain se escriben en la **misma transacción de BD** junto a un registro en una tabla **outbox**; un worker lee el outbox y ejecuta el broadcast. Si el proceso se cae, **nada se pierde ni se duplica** (la intención quedó persistida).
+4. **Fondos retenidos (two-phase)**: al iniciar, se **debita en `hold`**; al confirmar se **commitea**; si falla/expira se **libera** automáticamente. El usuario nunca pierde saldo por una tx colgada.
+5. **Reconciliación (la cura de las colgadas)**: workers periódicos consultan la cadena por estado real y **avanzan o reparan** transacciones:
+   - tx `pending` > N min → **re-broadcast** o **bump de gas** (EVM) / re-envío.
+   - tx perdida → marca para revisión + alerta.
+   - depósito detectado tardío → acredita.
+6. **Confirmaciones** configurables por asset (ej. N bloques) antes de dar por `confirmed`.
+7. **Webhooks + polling de respaldo** para detección de depósitos (nunca depender de un solo canal).
+8. **Saga/compensación** para flujos multi-paso (P2P escrow): cada paso reversible con su compensación.
+9. **Timeouts y expiración** explícitos: ninguna tx vive "para siempre"; expira y libera fondos.
+10. **Observabilidad**: cada tx con `traceId`, estados con timestamps, panel en el **backoffice** para ver/forzar/reembolsar tx atascadas.
+
+> Módulos nuevos que materializan esto: `payments` (state machine + idempotencia), `ledger` (doble entrada + holds), `outbox` + workers BullMQ, `reconciliation` (jobs), `kyc`, `tx-auth` (step-up). El **backoffice** gana una pantalla de **operaciones** para auditar y destrabar.
+
 ## Stack
 - **Core**: NestJS + TypeScript + Postgres + Redis + `viem` (EVM) / `tronweb` (Tron).
 - **Backoffice**: Next 16 + React 19 + MUI + `@zentto/datagrid` (ya montado).
