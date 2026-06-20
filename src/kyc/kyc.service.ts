@@ -89,13 +89,17 @@ export class KycService {
    * óvalo de selfie + liveness). Devuelve la URL a abrir en la app; el resultado
    * llega por webhook y la app consulta GET /kyc/status.
    */
-  async startSession(userId: string, fullName?: string): Promise<KycStatusView & { redirectUrl: string | null }> {
+  async startSession(
+    userId: string,
+    fullName?: string,
+  ): Promise<KycStatusView & { redirectUrl: string | null }> {
     const existing = await this.repo.findOne({ where: { userId } });
     if (existing && existing.status === 'approved') {
       throw new BadRequestException('Tu identidad ya está verificada');
     }
     const session = await this.provider.createSession({ userId, fullName: fullName ?? null });
-    const entity = existing ?? this.repo.create({ id: randomUUID(), userId, status: 'not_started' });
+    const entity =
+      existing ?? this.repo.create({ id: randomUUID(), userId, status: 'not_started' });
     Object.assign(entity, {
       status: session.initialStatus,
       provider: this.provider.name,
