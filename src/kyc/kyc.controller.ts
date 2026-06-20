@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Request } from 'express';
 import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { KycDecisionDto, KycSubmitDto } from './dto/kyc.dto';
 import { KycService } from './kyc.service';
 
@@ -19,6 +21,14 @@ export class KycController {
   @ApiOperation({ summary: 'Envía datos + documento (MRZ) para verificación' })
   submit(@CurrentUser() user: AuthUser, @Body() dto: KycSubmitDto) {
     return this.kyc.submit(user.sub, dto);
+  }
+
+  // Webhook server-to-server de Didit (sin auth/CSRF: se valida por firma HMAC).
+  @Public()
+  @Post('webhook/didit')
+  @ApiOperation({ summary: 'Webhook de Didit con el resultado de la verificación' })
+  diditWebhook(@Req() req: Request, @Body() body: Record<string, unknown>) {
+    return this.kyc.handleDiditWebhook(body, req.headers);
   }
 
   // ⚠️ OPERADOR (backoffice): cola de revisión. Pendiente de role-gating real.

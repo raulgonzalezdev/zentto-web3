@@ -71,6 +71,14 @@ export interface KycConfig {
   provider: 'manual' | 'didit';
   /** API key de Didit (vacío => cae a revisión manual). */
   diditApiKey: string;
+  /** Base URL de la API de verificación de Didit. */
+  diditBaseUrl: string;
+  /** Workflow ID creado en el dashboard de Didit (define qué se verifica). */
+  diditWorkflowId: string;
+  /** Secreto para verificar la firma HMAC de los webhooks de Didit. */
+  diditWebhookSecret: string;
+  /** URL a la que Didit redirige al usuario tras completar la verificación. */
+  diditCallbackUrl: string;
 }
 
 export interface WithdrawalsConfig {
@@ -161,6 +169,10 @@ export default () => ({
   kyc: {
     provider: (process.env.KYC_PROVIDER ?? 'manual') as KycConfig['provider'],
     diditApiKey: process.env.DIDIT_API_KEY ?? '',
+    diditBaseUrl: process.env.DIDIT_BASE_URL ?? 'https://verification.didit.me',
+    diditWorkflowId: process.env.DIDIT_WORKFLOW_ID ?? '',
+    diditWebhookSecret: process.env.DIDIT_WEBHOOK_SECRET ?? '',
+    diditCallbackUrl: process.env.DIDIT_CALLBACK_URL ?? '',
   } satisfies KycConfig,
   indexer: {
     enabled: (process.env.DEPOSIT_INDEXER_ENABLED ?? 'false') === 'true',

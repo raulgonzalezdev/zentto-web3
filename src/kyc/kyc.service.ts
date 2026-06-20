@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
@@ -8,6 +14,7 @@ import { KycStatus, KycVerificationEntity } from '../database/entities/kyc-verif
 import { AmlScreeningService } from './aml-screening.service';
 import { KycSubmitDto } from './dto/kyc.dto';
 import { MrzService } from './mrz.service';
+import { verifyDiditSignature } from './providers/didit-webhook.util';
 import { DiditProvider } from './providers/didit.provider';
 import { KycProvider } from './providers/kyc-provider';
 import { ManualReviewProvider } from './providers/manual.provider';
@@ -31,6 +38,7 @@ export interface KycStatusView {
 export class KycService {
   private readonly logger = new Logger(KycService.name);
   private readonly provider: KycProvider;
+  private readonly cfg: KycConfig;
 
   constructor(
     @InjectRepository(KycVerificationEntity)
@@ -39,9 +47,16 @@ export class KycService {
     private readonly aml: AmlScreeningService,
     config: ConfigService,
   ) {
-    const cfg = config.getOrThrow<KycConfig>('kyc');
+    this.cfg = config.getOrThrow<KycConfig>('kyc');
     this.provider =
-      cfg.provider === 'didit' ? new DiditProvider(cfg.diditApiKey) : new ManualReviewProvider();
+      this.cfg.provider === 'didit'
+        ? new DiditProvider({
+            apiKey: this.cfg.diditApiKey,
+            baseUrl: this.cfg.diditBaseUrl,
+            workflowId: this.cfg.diditWorkflowId,
+            callbackUrl: this.cfg.diditCallbackUrl,
+          })
+        : new ManualReviewProvider();
     this.logger.log(`Proveedor KYC de liveness: ${this.provider.name}`);
   }
 
@@ -131,6 +146,43 @@ export class KycService {
       amlMatch: aml.match,
       redirectUrl: session.redirectUrl,
     };
+  }
+
+  /**
+   * Webhook de Didit: verifica la firma HMAC y aplica el resultado de liveness.
+   * `vendor_data` es nuestro userId. Idempotente: re-procesa sin efectos extra.
+   */
+  async handleDiditWebhook(
+    body: Record<string, unknown>,
+    headers: Record<string, string | string[] | undefined>,
+  ): Promise<{ ok: boolean }> {
+    if (!verifyDiditSignature(body, headers, this.cfg.diditWebhookSecret)) {
+      throw new UnauthorizedException('Firma de webhook inválida');
+    }
+    const userId = String(body.vendor_data ?? '');
+    const diditStatus = String(body.status ?? '');
+    const v = await this.repo.findOne({ where: { userId } });
+    if (!v) {
+      this.logger.warn(`Webhook Didit para usuario desconocido: ${userId}`);
+      return { ok: true }; // ack para que Didit no reintente
+    }
+    const map: Record<string, KycStatus> = {
+      Approved: 'approved',
+      Declined: 'rejected',
+      'In Review': 'in_review',
+      'Not Started': 'pending',
+      'In Progress': 'pending',
+    };
+    const next = map[diditStatus];
+    if (next) {
+      v.status = next;
+      v.livenessPassed =
+        next === 'approved' ? true : next === 'rejected' ? false : v.livenessPassed;
+      v.providerRef = String(body.session_id ?? v.providerRef ?? '');
+      await this.repo.save(v);
+      this.logger.log(`KYC ${v.id} → ${next} (Didit: ${diditStatus})`);
+    }
+    return { ok: true };
   }
 
   /** Decisión del operador (backoffice). Aprueba/rechaza una verificación en revisión. */

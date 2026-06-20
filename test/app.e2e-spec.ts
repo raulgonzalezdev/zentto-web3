@@ -1,7 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
-import { randomBytes } from 'crypto';
+import { createHmac, randomBytes } from 'crypto';
 import { authenticator } from 'otplib';
 import request from 'supertest';
 import { english, generateMnemonic } from 'viem/accounts';
@@ -28,6 +28,9 @@ describe('Zentto Web3 (e2e)', () => {
       process.env.JWT_REFRESH_SECRET ?? randomBytes(48).toString('base64url');
     process.env.FAUCET_ENABLED = 'true'; // habilita el faucet de prueba en e2e
     process.env.CUSTODY_MNEMONIC = process.env.CUSTODY_MNEMONIC ?? generateMnemonic(english);
+    // Secreto de webhook efímero (generado, no hardcodeado) para probar la firma de Didit.
+    process.env.DIDIT_WEBHOOK_SECRET =
+      process.env.DIDIT_WEBHOOK_SECRET ?? randomBytes(24).toString('hex');
 
     const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -248,6 +251,48 @@ describe('Zentto Web3 (e2e)', () => {
 
     const st = await agent.get('/api/kyc/status').expect(200);
     expect(st.body.status).toBe('approved');
+  });
+
+  it('webhook Didit: firma inválida → 401', async () => {
+    await request(app.getHttpServer())
+      .post('/api/kyc/webhook/didit')
+      .set('x-signature-simple', 'deadbeef')
+      .send({
+        created_at: Math.floor(Date.now() / 1000),
+        session_id: 's1',
+        status: 'Approved',
+        webhook_type: 'status.updated',
+        vendor_data: 'desconocido',
+      })
+      .expect(401);
+  });
+
+  it('webhook Didit: firma válida (HMAC) actualiza el KYC por vendor_data', async () => {
+    const me = await agent.get('/api/auth/me').expect(200);
+    const userId = me.body.user.id as string;
+    const created_at = Math.floor(Date.now() / 1000);
+    const sessionId = 'sess-123';
+    const status = 'In Review';
+    const webhookType = 'status.updated';
+    const canonical = `${created_at}:${sessionId}:${status}:${webhookType}`;
+    const sig = createHmac('sha256', process.env.DIDIT_WEBHOOK_SECRET as string)
+      .update(canonical, 'utf-8')
+      .digest('hex');
+
+    await request(app.getHttpServer())
+      .post('/api/kyc/webhook/didit')
+      .set('x-signature-simple', sig)
+      .send({
+        created_at,
+        session_id: sessionId,
+        status,
+        webhook_type: webhookType,
+        vendor_data: userId,
+      })
+      .expect(201);
+
+    const st = await agent.get('/api/kyc/status').expect(200);
+    expect(st.body.status).toBe('in_review');
   });
 
   it('logout cierra la sesión', async () => {
