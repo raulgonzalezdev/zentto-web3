@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
+import { randomBytes } from 'crypto';
 import request from 'supertest';
 
 /**
@@ -19,10 +20,11 @@ describe('Zentto Web3 (e2e)', () => {
   beforeAll(async () => {
     process.env.CHAIN_DIFFICULTY = process.env.CHAIN_DIFFICULTY ?? '2';
     process.env.MINING_REWARD = process.env.MINING_REWARD ?? '50';
-    process.env.JWT_SECRET =
-      process.env.JWT_SECRET ?? 'e2e-access-secret-0123456789abcdef0123456789abcdef';
+    // Secretos efímeros generados al vuelo (no se hardcodean → sin alertas de secret-scanning).
+    process.env.JWT_SECRET = process.env.JWT_SECRET ?? randomBytes(48).toString('base64url');
     process.env.JWT_REFRESH_SECRET =
-      process.env.JWT_REFRESH_SECRET ?? 'e2e-refresh-secret-0123456789abcdef0123456789abcdef';
+      process.env.JWT_REFRESH_SECRET ?? randomBytes(48).toString('base64url');
+    process.env.FAUCET_ENABLED = 'true'; // habilita el faucet de prueba en e2e
 
     const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -111,6 +113,42 @@ describe('Zentto Web3 (e2e)', () => {
   it('la cadena es íntegra', async () => {
     const res = await agent.get('/api/chain/validate').expect(200);
     expect(res.body.valid).toBe(true);
+  });
+
+  it('faucet acredita saldo y es idempotente', async () => {
+    const credit = () =>
+      agent
+        .post('/api/payments/credit')
+        .set('x-csrf-token', csrf)
+        .set('Idempotency-Key', 'e2e-credit-1')
+        .send({ asset: 'USDT', amount: '100' });
+    await credit().expect(201);
+    await credit().expect(201); // misma key => no duplica
+
+    const bal = await agent.get('/api/accounts/balance').expect(200);
+    const usdt = bal.body.find((b: { asset: string }) => b.asset === 'USDT');
+    expect(usdt.available).toBe('100');
+  });
+
+  it('transferencia interna descuenta del emisor (idempotente)', async () => {
+    const bEmail = `e2e_b_${Date.now()}@zentto.net`;
+    await request(app.getHttpServer())
+      .post('/api/auth/register')
+      .send({ email: bEmail, password: 'SuperSecret123' })
+      .expect(201);
+
+    const transfer = () =>
+      agent
+        .post('/api/payments/transfer')
+        .set('x-csrf-token', csrf)
+        .set('Idempotency-Key', 'e2e-tx-1')
+        .send({ toEmail: bEmail, asset: 'USDT', amount: '30' });
+    await transfer().expect(201);
+    await transfer().expect(201); // idempotente: no vuelve a descontar
+
+    const bal = await agent.get('/api/accounts/balance').expect(200);
+    const usdt = bal.body.find((b: { asset: string }) => b.asset === 'USDT');
+    expect(usdt.available).toBe('70'); // 100 - 30
   });
 
   it('logout cierra la sesión', async () => {

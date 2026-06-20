@@ -52,6 +52,15 @@ export interface AiConfig {
   effort: 'low' | 'medium' | 'high' | 'max';
 }
 
+export interface LedgerConfig {
+  /** Assets soportados por el ledger (ej. USDT, USDC). */
+  assets: string[];
+  /** Faucet de desarrollo (acreditar saldo de prueba). NUNCA true en producción. */
+  faucetEnabled: boolean;
+  /** Tope por acreditación del faucet. */
+  faucetMax: number;
+}
+
 export interface EvmConfig {
   rpcUrl: string;
   chainId: number;
@@ -118,6 +127,14 @@ export default () => ({
     model: process.env.AI_MODEL ?? '',
     effort: (process.env.AI_EFFORT ?? 'medium') as AiConfig['effort'],
   } satisfies AiConfig,
+  ledger: {
+    assets: (process.env.LEDGER_ASSETS ?? 'USDT,USDC')
+      .split(',')
+      .map((a) => a.trim().toUpperCase())
+      .filter(Boolean),
+    faucetEnabled: (process.env.FAUCET_ENABLED ?? 'false') === 'true',
+    faucetMax: parseInt(process.env.FAUCET_MAX ?? '1000', 10),
+  } satisfies LedgerConfig,
   evm: {
     // RPC público de Sepolia por defecto (sin API key). En prod usar Alchemy/Infura.
     rpcUrl: process.env.EVM_RPC_URL ?? 'https://ethereum-sepolia-rpc.publicnode.com',

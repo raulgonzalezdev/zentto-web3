@@ -18,6 +18,7 @@ import { envValidationSchema } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MiningModule } from './mining/mining.module';
+import { PaymentsModule } from './payments/payments.module';
 import { P2pModule } from './p2p/p2p.module';
 import { WalletsModule } from './wallets/wallets.module';
 
@@ -45,6 +46,7 @@ import { WalletsModule } from './wallets/wallets.module';
     AnalyticsModule,
     P2pModule,
     EvmModule,
+    PaymentsModule,
     HealthModule,
   ],
   providers: [
