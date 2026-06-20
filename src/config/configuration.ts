@@ -52,6 +52,11 @@ export interface AiConfig {
   effort: 'low' | 'medium' | 'high' | 'max';
 }
 
+export interface CustodyConfig {
+  /** Mnemónico maestro para derivar direcciones de depósito (DEV/testnet; en prod: KMS/MPC). */
+  mnemonic: string;
+}
+
 export interface LedgerConfig {
   /** Assets soportados por el ledger (ej. USDT, USDC). */
   assets: string[];
@@ -127,6 +132,9 @@ export default () => ({
     model: process.env.AI_MODEL ?? '',
     effort: (process.env.AI_EFFORT ?? 'medium') as AiConfig['effort'],
   } satisfies AiConfig,
+  custody: {
+    mnemonic: process.env.CUSTODY_MNEMONIC ?? '',
+  } satisfies CustodyConfig,
   ledger: {
     assets: (process.env.LEDGER_ASSETS ?? 'USDT,USDC')
       .split(',')

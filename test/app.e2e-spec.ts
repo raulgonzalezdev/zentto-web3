@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import { randomBytes } from 'crypto';
 import request from 'supertest';
+import { english, generateMnemonic } from 'viem/accounts';
 
 /**
  * E2E del flujo completo con autenticación. Requiere Postgres y Redis
@@ -25,6 +26,7 @@ describe('Zentto Web3 (e2e)', () => {
     process.env.JWT_REFRESH_SECRET =
       process.env.JWT_REFRESH_SECRET ?? randomBytes(48).toString('base64url');
     process.env.FAUCET_ENABLED = 'true'; // habilita el faucet de prueba en e2e
+    process.env.CUSTODY_MNEMONIC = process.env.CUSTODY_MNEMONIC ?? generateMnemonic(english);
 
     const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -116,11 +118,12 @@ describe('Zentto Web3 (e2e)', () => {
   });
 
   it('faucet acredita saldo y es idempotente', async () => {
+    const key = `e2e-credit-${Date.now()}`;
     const credit = () =>
       agent
         .post('/api/payments/credit')
         .set('x-csrf-token', csrf)
-        .set('Idempotency-Key', 'e2e-credit-1')
+        .set('Idempotency-Key', key)
         .send({ asset: 'USDT', amount: '100' });
     await credit().expect(201);
     await credit().expect(201); // misma key => no duplica
@@ -137,11 +140,12 @@ describe('Zentto Web3 (e2e)', () => {
       .send({ email: bEmail, password: 'SuperSecret123' })
       .expect(201);
 
+    const key = `e2e-tx-${Date.now()}`;
     const transfer = () =>
       agent
         .post('/api/payments/transfer')
         .set('x-csrf-token', csrf)
-        .set('Idempotency-Key', 'e2e-tx-1')
+        .set('Idempotency-Key', key)
         .send({ toEmail: bEmail, asset: 'USDT', amount: '30' });
     await transfer().expect(201);
     await transfer().expect(201); // idempotente: no vuelve a descontar
@@ -149,6 +153,12 @@ describe('Zentto Web3 (e2e)', () => {
     const bal = await agent.get('/api/accounts/balance').expect(200);
     const usdt = bal.body.find((b: { asset: string }) => b.asset === 'USDT');
     expect(usdt.available).toBe('70'); // 100 - 30
+  });
+
+  it('asigna una dirección de depósito on-chain (HD)', async () => {
+    const res = await agent.get('/api/accounts/deposit-address').expect(200);
+    expect(res.body.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(res.body.network).toBe('evm');
   });
 
   it('logout cierra la sesión', async () => {

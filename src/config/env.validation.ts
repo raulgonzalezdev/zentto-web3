@@ -49,6 +49,7 @@ export const envValidationSchema = Joi.object({
   COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
   COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
 
+  CUSTODY_MNEMONIC: Joi.string().allow('').default(''),
   LEDGER_ASSETS: Joi.string().default('USDT,USDC'),
   FAUCET_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   FAUCET_MAX: Joi.number().min(0).default(1000),
