@@ -1,0 +1,48 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsOptional, IsString, Length, MaxLength, MinLength } from 'class-validator';
+
+export class RegisterDto {
+  @ApiProperty({ example: 'demo@zentto.net' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: 'SuperSecret123', minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  password!: string;
+
+  @ApiProperty({ required: false, example: 'Demo User' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  displayName?: string;
+}
+
+export class LoginDto {
+  @ApiProperty({ example: 'demo@zentto.net' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: 'SuperSecret123' })
+  @IsString()
+  password!: string;
+}
+
+export class TwoFactorLoginDto {
+  @ApiProperty({ description: 'Ticket MFA devuelto por /auth/login' })
+  @IsString()
+  mfaToken!: string;
+
+  @ApiProperty({ example: '123456', description: 'Código TOTP de 6 dígitos' })
+  @IsString()
+  @Length(6, 6)
+  code!: string;
+}
+
+export class TotpCodeDto {
+  @ApiProperty({ example: '123456' })
+  @IsString()
+  @Length(6, 6)
+  code!: string;
+}

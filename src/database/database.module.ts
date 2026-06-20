@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatabaseConfig } from '../config/configuration';
 import { BlockEntity } from './entities/block.entity';
 import { TransactionEntity } from './entities/transaction.entity';
+import { UserEntity } from './entities/user.entity';
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { TransactionEntity } from './entities/transaction.entity';
           username: db.user,
           password: db.password,
           database: db.name,
-          entities: [BlockEntity, TransactionEntity],
+          entities: [BlockEntity, TransactionEntity, UserEntity],
           synchronize: db.synchronize,
           logging: db.logging,
           // Reintentos al arrancar: la BD del contenedor puede tardar en estar lista.

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../auth/decorators/public.decorator';
 import { SignTransactionDto } from './dto/sign-transaction.dto';
 import { WalletsService } from './wallets.service';
 
@@ -14,6 +15,7 @@ export class WalletsController {
     return this.wallets.createWallet();
   }
 
+  @Public()
   @Get(':address/balance')
   @ApiOperation({ summary: 'Saldo confirmado y disponible de una address' })
   balance(@Param('address') address: string) {

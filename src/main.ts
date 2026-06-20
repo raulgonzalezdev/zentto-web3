@@ -2,6 +2,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
@@ -13,7 +14,16 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
   app.use(helmet());
-  app.enableCors({ origin: appCfg.corsOrigin });
+  app.use(cookieParser());
+  // CORS con credenciales (cookies). Con credenciales no se permite '*':
+  // se refleja el/los origen(es) configurados (lista separada por comas).
+  const corsOrigin =
+    appCfg.corsOrigin === '*' ? true : appCfg.corsOrigin.split(',').map((o) => o.trim());
+  app.enableCors({
+    origin: corsOrigin,
+    credentials: true,
+    exposedHeaders: ['X-CSRF-Token'],
+  });
   app.setGlobalPrefix(appCfg.apiPrefix);
   app.useGlobalPipes(
     new ValidationPipe({

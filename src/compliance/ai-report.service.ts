@@ -11,8 +11,10 @@ import { RiskAssessment } from './risk-scoring.service';
  * undici al reutilizar conexiones que el servidor (DeepSeek/OpenAI) cierra.
  */
 const noKeepAliveDispatcher = new Agent({ keepAliveTimeout: 1, keepAliveMaxTimeout: 1 });
-const resilientFetch = ((url: any, init?: any) =>
-  undiciFetch(url, { ...init, dispatcher: noKeepAliveDispatcher })) as unknown as typeof fetch;
+// `any` a propósito: el tipo de undici.fetch no coincide exactamente con el
+// tipo `Fetch` del SDK de OpenAI (ts-jest lo rechaza); en runtime es compatible.
+const resilientFetch: any = (url: any, init?: any) =>
+  undiciFetch(url, { ...init, dispatcher: noKeepAliveDispatcher });
 
 export type NarrativeSource = 'anthropic' | 'openai' | 'deepseek' | 'deterministic';
 

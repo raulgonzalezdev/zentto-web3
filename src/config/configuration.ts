@@ -52,6 +52,18 @@ export interface AiConfig {
   effort: 'low' | 'medium' | 'high' | 'max';
 }
 
+export interface AuthConfig {
+  jwtSecret: string;
+  jwtRefreshSecret: string;
+  accessTtl: string; // p.ej. '15m'
+  refreshTtl: string; // p.ej. '7d'
+  bcryptRounds: number;
+  totpIssuer: string;
+  cookieDomain: string; // '' => host actual
+  cookieSecure: boolean; // true en producción (HTTPS)
+  cookieSameSite: 'lax' | 'strict' | 'none';
+}
+
 export default () => ({
   app: {
     env: process.env.NODE_ENV ?? 'development',
@@ -89,4 +101,17 @@ export default () => ({
     model: process.env.AI_MODEL ?? '',
     effort: (process.env.AI_EFFORT ?? 'medium') as AiConfig['effort'],
   } satisfies AiConfig,
+  auth: {
+    // Sin default: la validación Joi los exige (mín. 32 chars). Genéralos con
+    // `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
+    jwtSecret: process.env.JWT_SECRET ?? '',
+    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? '',
+    accessTtl: process.env.JWT_ACCESS_TTL ?? '15m',
+    refreshTtl: process.env.JWT_REFRESH_TTL ?? '7d',
+    bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS ?? '12', 10),
+    totpIssuer: process.env.TOTP_ISSUER ?? 'Zentto Web3',
+    cookieDomain: process.env.COOKIE_DOMAIN ?? '',
+    cookieSecure: (process.env.COOKIE_SECURE ?? 'false') === 'true',
+    cookieSameSite: (process.env.COOKIE_SAMESITE ?? 'lax') as AuthConfig['cookieSameSite'],
+  } satisfies AuthConfig,
 });
