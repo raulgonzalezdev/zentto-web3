@@ -1,0 +1,72 @@
+### Zentto Web3 — ejemplos de uso (VS Code REST Client / IntelliJ HTTP)
+@base = http://localhost:4100/api
+
+### Health
+GET {{base}}/health
+
+### Crear wallet del minero
+POST {{base}}/wallets
+
+### Crear wallet de usuario
+POST {{base}}/wallets
+
+### Encolar minado (sustituir MINER_ADDRESS)
+POST {{base}}/mining
+Content-Type: application/json
+
+{ "minerAddress": "MINER_ADDRESS" }
+
+### Estado del job de minado (sustituir JOB_ID)
+GET {{base}}/mining/jobs/JOB_ID
+
+### Saldo del minero
+GET {{base}}/wallets/MINER_ADDRESS/balance
+
+### Firmar una transacción (helper de demo — sustituir PRIVATE_KEY / TO_ADDRESS)
+POST {{base}}/wallets/sign
+Content-Type: application/json
+
+{ "privateKey": "PRIVATE_KEY", "toAddress": "TO_ADDRESS", "amount": 10, "fee": 1 }
+
+### Enviar la transacción firmada (pegar el payload devuelto por /wallets/sign)
+POST {{base}}/transactions
+Content-Type: application/json
+
+{
+  "fromAddress": "FROM",
+  "toAddress": "TO",
+  "amount": 10,
+  "fee": 1,
+  "timestamp": 0,
+  "signature": "SIGNATURE"
+}
+
+### Mempool
+GET {{base}}/transactions/pending
+
+### Cadena completa
+GET {{base}}/chain
+
+### Validar la cadena
+GET {{base}}/chain/validate
+
+### Screening AML
+GET {{base}}/compliance/screen/MINER_ADDRESS
+
+### Informe de cumplimiento (scoring + IA)
+POST {{base}}/compliance/report
+Content-Type: application/json
+
+{ "address": "MINER_ADDRESS" }
+
+### Grafo de transferencias
+GET {{base}}/analytics/graph
+
+### Hubs tipo exchange
+GET {{base}}/analytics/hubs?minDegree=5
+
+### Relaciones de una address
+GET {{base}}/analytics/address/MINER_ADDRESS/relations
+
+### Trazar ruta de fondos
+GET {{base}}/analytics/trace?from=A&to=B

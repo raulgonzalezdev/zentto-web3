@@ -1,0 +1,87 @@
+# ─────────────────────────────────────────────────────────────
+# Stack local 100% independiente del ERP Zentto.
+# Levanta: API Web3 + su propia Postgres + Redis.
+# Puertos elegidos altos (5544 / 6399 / 4100) para no chocar
+# con la Postgres/Redis del ERP.
+# ─────────────────────────────────────────────────────────────
+services:
+  web3-db:
+    image: postgres:16-alpine
+    container_name: zentto-web3-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-web3}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env (copia .env.example a .env)}
+      POSTGRES_DB: ${DB_NAME:-zentto_web3}
+    ports:
+      - '${DB_PORT:-5544}:5432'
+    volumes:
+      - web3-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-web3} -d ${DB_NAME:-zentto_web3}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - web3-net
+
+  web3-redis:
+    image: redis:7-alpine
+    container_name: zentto-web3-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '${REDIS_PORT:-6399}:6379'
+    volumes:
+      - web3-redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - web3-net
+
+  web3-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: zentto-web3-api
+    restart: unless-stopped
+    depends_on:
+      web3-db:
+        condition: service_healthy
+      web3-redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4100
+      API_PREFIX: api
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      DB_HOST: web3-db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-web3}
+      DB_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+      DB_NAME: ${DB_NAME:-zentto_web3}
+      DB_SYNCHRONIZE: 'true'
+      REDIS_HOST: web3-redis
+      REDIS_PORT: 6379
+      CHAIN_DIFFICULTY: ${CHAIN_DIFFICULTY:-3}
+      MINING_REWARD: ${MINING_REWARD:-50}
+      AML_HIGH_RISK_THRESHOLD: ${AML_HIGH_RISK_THRESHOLD:-70}
+      AML_STRUCTURING_AMOUNT: ${AML_STRUCTURING_AMOUNT:-9000}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-opus-4-8}
+      AI_EFFORT: ${AI_EFFORT:-medium}
+    ports:
+      - '${PORT:-4100}:4100'
+    networks:
+      - web3-net
+
+volumes:
+  web3-db-data:
+  web3-redis-data:
+
+networks:
+  web3-net:
+    driver: bridge
