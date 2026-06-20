@@ -37,14 +37,16 @@ export class KycVerificationEntity {
   @Column({ type: 'varchar', length: 160, nullable: true })
   fullName!: string | null;
 
-  @Column({ type: 'varchar', length: 8, nullable: true })
-  birthDate!: string | null; // YYMMDD del MRZ
+  // Acepta YYMMDD (MRZ) o YYYY-MM-DD (Didit id-verification).
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  birthDate!: string | null;
 
-  @Column({ type: 'varchar', length: 8, nullable: true })
+  // Didit devuelve código o nombre de país; MRZ devuelve 3 letras.
+  @Column({ type: 'varchar', length: 64, nullable: true })
   nationality!: string | null;
 
-  @Column({ type: 'varchar', length: 16, nullable: true })
-  documentType!: string | null; // passport | id_card
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  documentType!: string | null; // passport | id_card | PASSPORT | DRIVING_LICENSE…
 
   @Column({ type: 'varchar', length: 64, nullable: true })
   documentNumber!: string | null;
