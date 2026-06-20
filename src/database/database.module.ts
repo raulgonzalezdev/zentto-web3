@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatabaseConfig } from '../config/configuration';
 import { BlockEntity } from './entities/block.entity';
+import { ChainCursorEntity } from './entities/chain-cursor.entity';
+import { ChainDepositEntity } from './entities/chain-deposit.entity';
 import { DepositAddressEntity } from './entities/deposit-address.entity';
 import { HoldEntity } from './entities/hold.entity';
 import { LedgerAccountEntity } from './entities/ledger-account.entity';
@@ -34,6 +36,8 @@ import { UserEntity } from './entities/user.entity';
             PaymentEntity,
             HoldEntity,
             DepositAddressEntity,
+            ChainCursorEntity,
+            ChainDepositEntity,
           ],
           synchronize: db.synchronize,
           logging: db.logging,

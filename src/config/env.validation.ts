@@ -50,11 +50,14 @@ export const envValidationSchema = Joi.object({
   COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
 
   CUSTODY_MNEMONIC: Joi.string().allow('').default(''),
+  DEPOSIT_INDEXER_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+  EVM_CONFIRMATIONS: Joi.number().min(0).default(3),
+  DEPOSIT_SCAN_RANGE: Joi.number().min(1).default(2000),
   LEDGER_ASSETS: Joi.string().default('USDT,USDC'),
   FAUCET_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   FAUCET_MAX: Joi.number().min(0).default(1000),
 
-  EVM_RPC_URL: Joi.string().default('https://ethereum-sepolia-rpc.publicnode.com'),
+  EVM_RPC_URL: Joi.string().default('https://sepolia.drpc.org'),
   EVM_CHAIN_ID: Joi.number().default(11155111),
   EVM_CHAIN_NAME: Joi.string().default('Sepolia'),
   EVM_EXPLORER_URL: Joi.string().default('https://sepolia.etherscan.io'),
