@@ -24,6 +24,7 @@ export class WithdrawalsController {
       amount: dto.amount,
       toAddress: dto.toAddress,
       idempotencyKey: key || randomUUID(),
+      totpCode: dto.totpCode,
     });
   }
 
