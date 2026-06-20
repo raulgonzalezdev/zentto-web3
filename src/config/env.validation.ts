@@ -9,6 +9,8 @@ export const envValidationSchema = Joi.object({
   PORT: Joi.number().default(4100),
   API_PREFIX: Joi.string().default('api'),
   CORS_ORIGIN: Joi.string().default('*'),
+  // Emails de operadores del backoffice (coma). Vacío = cualquier autenticado (dev).
+  OPERATOR_EMAILS: Joi.string().allow('').default(''),
 
   DB_HOST: Joi.string().default('localhost'),
   DB_PORT: Joi.number().default(5544),

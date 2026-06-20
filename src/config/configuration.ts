@@ -7,6 +7,8 @@ export interface AppConfig {
   port: number;
   apiPrefix: string;
   corsOrigin: string;
+  /** Emails de operadores del backoffice. Vacío = cualquier autenticado (dev). */
+  operatorEmails: string[];
 }
 
 export interface DatabaseConfig {
@@ -132,6 +134,10 @@ export default () => ({
     port: parseInt(process.env.PORT ?? '4100', 10),
     apiPrefix: process.env.API_PREFIX ?? 'api',
     corsOrigin: process.env.CORS_ORIGIN ?? '*',
+    operatorEmails: (process.env.OPERATOR_EMAILS ?? '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
   } satisfies AppConfig,
   database: {
     host: process.env.DB_HOST ?? 'localhost',
