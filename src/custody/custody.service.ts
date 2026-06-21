@@ -16,6 +16,7 @@ import { mnemonicToAccount } from 'viem/accounts';
 import { CustodyConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
 import { DepositAddressEntity } from '../database/entities/deposit-address.entity';
 import { AlchemyNotifyService } from './alchemy-notify.service';
+import { SolanaService } from './solana.service';
 import { StellarService } from './stellar.service';
 import { TronService } from './tron.service';
 
@@ -65,6 +66,7 @@ export class CustodyService implements OnModuleInit {
     private readonly deposits: Repository<DepositAddressEntity>,
     private readonly tron: TronService,
     private readonly stellar: StellarService,
+    private readonly solana: SolanaService,
     private readonly notify: AlchemyNotifyService,
     private readonly dataSource: DataSource,
     config: ConfigService,
@@ -259,6 +261,23 @@ export class CustodyService implements OnModuleInit {
         token: cfg.usdcAddress,
         explorerUrl: `${cfg.explorerUrl}/address/${dep.address}`,
         note: `Envía USDT (TRC-20) en ${cfg.name} a esta dirección. El indexer lo detecta y acredita tu saldo.`,
+      };
+    }
+
+    if (cfg.family === 'solana') {
+      // Dirección única por usuario (SPL). El remitente crea la ATA al enviar.
+      const dep = await this.getOrCreateAddress(userId, 'solana', (i) =>
+        this.solana.deriveAddress(i),
+      );
+      return {
+        network: cfg.key,
+        chainName: cfg.name,
+        nativeSymbol: cfg.nativeSymbol,
+        address: dep.address,
+        asset: 'USDC',
+        token: cfg.usdcAddress,
+        explorerUrl: `${cfg.explorerUrl}/account/${dep.address}`,
+        note: `Envía USDC o USDT (SPL) en ${cfg.name} a esta dirección. El indexer lo detecta y acredita tu saldo.`,
       };
     }
 

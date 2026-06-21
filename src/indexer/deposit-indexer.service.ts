@@ -14,11 +14,13 @@ import { FEE_ACCOUNT, FeeService } from '../fees/fee.service';
 import { isPositive } from '../common/money.util';
 import { LedgerService } from '../ledger/ledger.service';
 import { TronService } from '../custody/tron.service';
+import { SolanaService } from '../custody/solana.service';
 import { NetworksConfig } from '../config/configuration';
 
 // Las direcciones de depósito EVM se almacenan bajo esta clave canónica (compartida).
 const NETWORK_EVM = 'evm';
 const NETWORK_TRON = 'tron';
+const NETWORK_SOLANA = 'solana';
 const SYSTEM_CUSTODY = 'custody';
 const TRON_USDT_DECIMALS = 6;
 
@@ -54,14 +56,13 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     private readonly ledger: LedgerService,
     private readonly fees: FeeService,
     private readonly tron: TronService,
+    private readonly solana: SolanaService,
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<IndexerConfig>('indexer');
-    const tronNet = config
-      .getOrThrow<NetworksConfig>('networks')
-      .list.find((n) => n.family === 'tron');
-    this.tronToken = tronNet?.usdcAddress ?? '';
+    const list = config.getOrThrow<NetworksConfig>('networks').list;
+    this.tronToken = list.find((n) => n.family === 'tron')?.usdcAddress ?? '';
   }
 
   onModuleInit(): void {
@@ -153,9 +154,15 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
         }
       }
 
-      // ── Tron (USDT-TRC20): polling por dirección vía TronGrid/Alchemy ──
+      // ── Tron (USDT-TRC20): polling por dirección vía TronGrid ──
       credited += await this.scanTron().catch((err) => {
         this.logger.warn(`Indexer tron: ${(err as Error).message}`);
+        return 0;
+      });
+
+      // ── Solana (SPL USDC/USDT): polling por dirección vía RPC Solana ──
+      credited += await this.scanSolana().catch((err) => {
+        this.logger.warn(`Indexer solana: ${(err as Error).message}`);
         return 0;
       });
 
@@ -201,6 +208,35 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
       }
     }
     await this.cursors.save({ network: NETWORK_TRON, lastBlock: String(nowMs) } as ChainCursorEntity);
+    return credited;
+  }
+
+  /**
+   * Indexer Solana: por cada dirección de depósito Solana del usuario, consulta las
+   * transferencias SPL (USDC/USDT) entrantes y las acredita (idempotente por firma).
+   * Sin cursor: revisa las últimas firmas por ATA y la idempotencia evita duplicar.
+   */
+  private async scanSolana(): Promise<number> {
+    if (!this.solana.enabled) return 0;
+    const rows = await this.deposits.find({ where: { network: NETWORK_SOLANA } });
+    if (rows.length === 0) return 0;
+
+    let credited = 0;
+    for (const row of rows) {
+      const transfers = await this.solana.getIncomingTransfers(row.address);
+      for (const t of transfers) {
+        const amount = formatUnits(t.value, t.decimals);
+        const ok = await this.creditDeposit(
+          NETWORK_SOLANA,
+          '', // SPL: el mint va por transfer; no es necesario para el crédito
+          row.userId,
+          { txHash: t.txId, logIndex: 0, value: t.value, blockNumber: 0n },
+          amount,
+          t.asset,
+        );
+        if (ok) credited++;
+      }
+    }
     return credited;
   }
 

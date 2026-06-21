@@ -150,7 +150,7 @@ export interface EvmConfig {
  */
 export interface NetworkConfig {
   key: string; // id estable usado en BD/indexer/retiros: 'sepolia', 'polygon-amoy', ...
-  family: 'evm' | 'tron' | 'stellar';
+  family: 'evm' | 'tron' | 'stellar' | 'solana';
   chainId: number;
   name: string;
   rpcUrl: string;
@@ -323,7 +323,31 @@ function buildNetworks(): NetworkConfig[] {
     available: (process.env.STELLAR_ENABLED ?? 'false') === 'true',
   };
 
-  const nets: NetworkConfig[] = [ethereum, polygon, bsc, tron, stellar];
+  // ─── Solana mainnet (SPL USDC + USDT) — direcciones únicas por usuario ───
+  const solana: NetworkConfig = {
+    key: 'solana',
+    family: 'solana',
+    chainId: 0,
+    name: 'Solana',
+    rpcUrl:
+      process.env.SOLANA_RPC_URL || alchemyRpc('solana-mainnet') || 'https://api.mainnet-beta.solana.com',
+    fallbackRpcUrl: 'https://api.mainnet-beta.solana.com',
+    explorerUrl: 'https://solscan.io',
+    nativeSymbol: 'SOL',
+    usdcAddress: process.env.SOLANA_USDC_MINT || 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    asset: 'USDC',
+    tokens: [
+      { address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', asset: 'USDC' },
+      { address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', asset: 'USDT' },
+    ],
+    confirmations: 1,
+    isTestnet: false,
+    enabled: (process.env.SOLANA_ENABLED ?? 'false') === 'true',
+    available: (process.env.SOLANA_ENABLED ?? 'false') === 'true',
+  };
+
+  // BSC primero = red por DEFECTO (la más barata en comisión, más que Tron/Ethereum).
+  const nets: NetworkConfig[] = [bsc, ethereum, polygon, tron, solana, stellar];
 
   // Testnets opcionales (QA) — solo con TESTNETS_ENABLED=true.
   if (testnetsEnabled) {
