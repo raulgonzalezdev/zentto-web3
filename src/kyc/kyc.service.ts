@@ -19,6 +19,7 @@ import { verifyDiditSignature } from './providers/didit-webhook.util';
 import { DiditProvider } from './providers/didit.provider';
 import { KycProvider } from './providers/kyc-provider';
 import { ManualReviewProvider } from './providers/manual.provider';
+import { ZenttoKycProvider } from './providers/zentto.provider';
 
 export interface KycStatusView {
   id?: string;
@@ -50,15 +51,27 @@ export class KycService {
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<KycConfig>('kyc');
-    this.provider =
-      this.cfg.provider === 'didit'
-        ? new DiditProvider({
-            apiKey: this.cfg.diditApiKey,
-            baseUrl: this.cfg.diditBaseUrl,
-            workflowId: this.cfg.diditWorkflowId,
-            callbackUrl: this.cfg.diditCallbackUrl,
-          })
-        : new ManualReviewProvider();
+    // Selección del proveedor adversarial según KYC_PROVIDER. Default: manual.
+    switch (this.cfg.provider) {
+      case 'didit':
+        this.provider = new DiditProvider({
+          apiKey: this.cfg.diditApiKey,
+          baseUrl: this.cfg.diditBaseUrl,
+          workflowId: this.cfg.diditWorkflowId,
+          callbackUrl: this.cfg.diditCallbackUrl,
+        });
+        break;
+      case 'zentto':
+        // Microservicio self-hosted Zentto KYC (reemplazo gratis de Didit).
+        this.provider = new ZenttoKycProvider({
+          baseUrl: this.cfg.zenttoUrl,
+          apiKey: this.cfg.zenttoApiKey,
+          callbackUrl: this.cfg.diditCallbackUrl,
+        });
+        break;
+      default:
+        this.provider = new ManualReviewProvider();
+    }
     this.logger.log(`Proveedor KYC de liveness: ${this.provider.name}`);
   }
 

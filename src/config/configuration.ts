@@ -78,8 +78,8 @@ export interface CustodyConfig {
 }
 
 export interface KycConfig {
-  /** Proveedor de liveness/autenticidad: 'manual' (revisión a mano) | 'didit'. */
-  provider: 'manual' | 'didit';
+  /** Proveedor de liveness/autenticidad: 'manual' (revisión a mano) | 'didit' | 'zentto'. */
+  provider: 'manual' | 'didit' | 'zentto';
   /** API key de Didit (vacío => cae a revisión manual). */
   diditApiKey: string;
   /** Base URL de la API de verificación de Didit. */
@@ -90,6 +90,10 @@ export interface KycConfig {
   diditWebhookSecret: string;
   /** URL a la que Didit redirige al usuario tras completar la verificación. */
   diditCallbackUrl: string;
+  /** Base URL del microservicio self-hosted Zentto KYC (vacío => cae a revisión manual). */
+  zenttoUrl: string;
+  /** API key del servicio Zentto KYC (header X-API-Key). */
+  zenttoApiKey: string;
 }
 
 export interface WithdrawalsConfig {
@@ -336,6 +340,8 @@ export default () => ({
     diditWorkflowId: process.env.DIDIT_WORKFLOW_ID ?? '',
     diditWebhookSecret: process.env.DIDIT_WEBHOOK_SECRET ?? '',
     diditCallbackUrl: process.env.DIDIT_CALLBACK_URL ?? '',
+    zenttoUrl: process.env.ZENTTO_KYC_URL ?? '',
+    zenttoApiKey: process.env.ZENTTO_KYC_API_KEY ?? '',
   } satisfies KycConfig,
   indexer: {
     enabled: (process.env.DEPOSIT_INDEXER_ENABLED ?? 'false') === 'true',
