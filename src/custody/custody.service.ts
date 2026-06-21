@@ -240,6 +240,13 @@ export class CustodyService implements OnModuleInit {
     }
     const cfg = networkKey ? this.netByKey.get(networkKey) : this.evmNet().cfg;
     if (!cfg) throw new ServiceUnavailableException(`Red no soportada: ${networkKey}`);
+    // Seguridad anti-pérdida: NO entregar dirección de una red que aún no indexamos
+    // (sin indexer, un depósito ahí no se acreditaría).
+    if (!cfg.available) {
+      throw new ServiceUnavailableException(
+        `La red ${cfg.name} aún no está disponible para depósitos. Usa Ethereum, Polygon o BSC.`,
+      );
+    }
 
     if (cfg.family === 'tron') {
       const dep = await this.getOrCreateAddress(userId, 'tron', (i) => this.tron.deriveAddress(i));
