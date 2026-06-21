@@ -24,7 +24,8 @@ export interface CreateOrderInput {
   asset: string;
   amount: string;
   priceVes: string;
-  paymentMethod?: string;
+  paymentMethod?: string; // etiqueta pública (banco/método)
+  paymentDetails?: string; // datos completos (privados, se revelan al tomar)
 }
 
 /**
@@ -97,7 +98,7 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
   // ─────────────────────────────── Órdenes ───────────────────────────────
 
   async createOrder(userId: string, input: CreateOrderInput): Promise<P2pOrderEntity> {
-    const { side, asset, amount, priceVes, paymentMethod } = input;
+    const { side, asset, amount, priceVes, paymentMethod, paymentDetails } = input;
     if (side !== 'buy' && side !== 'sell') throw new BadRequestException('side inválido');
     if (!this.assets.includes(asset)) throw new BadRequestException(`Asset no soportado: ${asset}`);
     if (!isPositive(amount)) throw new BadRequestException('amount debe ser > 0');
@@ -134,6 +135,7 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
         amount,
         priceVes,
         paymentMethod: paymentMethod ?? null,
+        paymentDetails: paymentDetails?.slice(0, 600) ?? null,
         status: 'open',
         holdId,
       });
@@ -148,7 +150,12 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
     if (filter.asset) where.asset = filter.asset;
     const rows = await this.orders.find({ where, order: { createdAt: 'DESC' }, take: 200 });
     const emails = await this.emails(rows.map((r) => r.makerUserId));
-    return rows.map((r) => ({ ...r, makerEmail: emails.get(r.makerUserId) ?? null }));
+    // PRIVACIDAD (estilo Binance): el libro público nunca expone los datos de pago
+    // completos — solo la etiqueta del método. Los datos se revelan al tomar la oferta.
+    return rows.map(({ paymentDetails: _omit, ...r }) => ({
+      ...r,
+      makerEmail: emails.get(r.makerUserId) ?? null,
+    }));
   }
 
   async listMine(userId: string) {
@@ -426,10 +433,14 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
       throw new ForbiddenException('No participas en este trade');
     }
     const emails = await this.emails([trade.buyerUserId, trade.sellerUserId]);
+    // Una vez creado el trade, las partes SÍ ven los datos de pago completos del maker.
+    const order = await this.orders.findOne({ where: { id: trade.orderId } });
     return {
       ...trade,
       buyerEmail: emails.get(trade.buyerUserId) ?? null,
       sellerEmail: emails.get(trade.sellerUserId) ?? null,
+      paymentMethod: order?.paymentMethod ?? null,
+      paymentDetails: order?.paymentDetails ?? null,
     };
   }
 

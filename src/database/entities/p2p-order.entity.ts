@@ -29,8 +29,15 @@ export class P2pOrderEntity {
   @Column({ type: 'numeric', precision: 38, scale: 2 })
   priceVes!: string; // precio por unidad en VES
 
-  @Column({ type: 'varchar', length: 64, nullable: true })
-  paymentMethod!: string | null; // "Pago Móvil", "Transferencia", etc.
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  paymentMethod!: string | null; // etiqueta PÚBLICA: "Pago Móvil · Mercantil", banco(s)
+
+  /**
+   * Datos de pago COMPLETOS (teléfono/cuenta/titular). PRIVADO: nunca se expone
+   * en el order book público; solo se revela a las partes una vez creado el trade.
+   */
+  @Column({ type: 'varchar', length: 600, nullable: true })
+  paymentDetails!: string | null;
 
   @Index()
   @Column({ type: 'varchar', length: 12, default: 'open' })
