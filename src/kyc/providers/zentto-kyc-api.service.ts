@@ -77,11 +77,17 @@ export class ZenttoKycApiService {
     return data.session.id;
   }
 
-  async idVerification(sessionId: string, front: UploadFile, back?: UploadFile): Promise<void> {
+  async idVerification(
+    sessionId: string,
+    front: UploadFile,
+    back?: UploadFile,
+    documentType?: string,
+  ): Promise<void> {
     const form = new FormData();
     form.append('front_image', this.blob(front), front.originalname);
     if (back) form.append('back_image', this.blob(back), back.originalname);
     form.append('sessionId', sessionId);
+    if (documentType) form.append('document_type', documentType);
     await this.postForm('/v1/documents/id-verification', form);
   }
 
