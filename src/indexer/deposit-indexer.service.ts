@@ -93,6 +93,13 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     if (!row) return false; // no es una de nuestras direcciones de depósito
     const value = BigInt(input.valueRaw);
     const amount = formatUnits(value, input.decimals ?? 6);
+    // Asset del ledger según la red (USDT en BSC mainnet, USDC en testnets).
+    let asset = 'USDC';
+    try {
+      asset = this.evm.cfgOf(input.network)?.asset ?? 'USDC';
+    } catch {
+      /* red desconocida → default USDC */
+    }
     return this.creditDeposit(
       input.network,
       input.tokenAddress,
@@ -104,6 +111,7 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
         blockNumber: BigInt(input.blockNumber ?? '0'),
       },
       amount,
+      asset,
     );
   }
 
@@ -188,7 +196,7 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
       const userId = byAddress.get(t.to);
       if (!userId) continue;
       const amount = formatUnits(t.value, decimals);
-      const ok = await this.creditDeposit(netKey, usdc, userId, t, amount);
+      const ok = await this.creditDeposit(netKey, usdc, userId, t, amount, netCfg.asset);
       if (ok) credited++;
     }
 
@@ -211,6 +219,7 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     userId: string,
     t: { txHash: string; logIndex: number; value: bigint; blockNumber: bigint },
     amount: string,
+    asset = 'USDC',
   ): Promise<boolean> {
     const exists = await this.chainDeposits.findOne({
       where: { network, txHash: t.txHash, logIndex: t.logIndex },
@@ -219,7 +228,6 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
 
     try {
       await this.dataSource.transaction(async (manager) => {
-        const asset = 'USDC';
         const custody = await this.ledger.getOrCreateAccount(
           'system',
           SYSTEM_CUSTODY,
