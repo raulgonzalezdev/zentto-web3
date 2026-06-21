@@ -157,8 +157,12 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     byAddress: Map<string, string>,
   ): Promise<ScanResult> {
     const netCfg = this.evm.cfgOf(netKey);
-    const usdc = netCfg.usdcAddress;
     const confirmations = netCfg.confirmations;
+    // Tokens a vigilar en esta red (USDT + USDC). Fallback al token principal.
+    const tokens =
+      netCfg.tokens && netCfg.tokens.length
+        ? netCfg.tokens
+        : [{ address: netCfg.usdcAddress, asset: netCfg.asset }];
 
     const current = await this.evm.currentBlock(netKey);
     const toBlockMax = current - BigInt(confirmations);
@@ -182,22 +186,26 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
       };
     }
 
-    const transfers = await this.evm.getErc20TransfersTo(
-      usdc,
-      addresses,
-      fromBlock,
-      toBlock,
-      netKey,
-    );
-    const decimals = transfers.length ? await this.evm.tokenDecimals(usdc, netKey) : 6;
-
+    let found = 0;
     let credited = 0;
-    for (const t of transfers) {
-      const userId = byAddress.get(t.to);
-      if (!userId) continue;
-      const amount = formatUnits(t.value, decimals);
-      const ok = await this.creditDeposit(netKey, usdc, userId, t, amount, netCfg.asset);
-      if (ok) credited++;
+    // Recorre cada stablecoin de la red (USDT, USDC) en la misma ventana de bloques.
+    for (const token of tokens) {
+      const transfers = await this.evm.getErc20TransfersTo(
+        token.address,
+        addresses,
+        fromBlock,
+        toBlock,
+        netKey,
+      );
+      found += transfers.length;
+      const decimals = transfers.length ? await this.evm.tokenDecimals(token.address, netKey) : 6;
+      for (const t of transfers) {
+        const userId = byAddress.get(t.to);
+        if (!userId) continue;
+        const amount = formatUnits(t.value, decimals);
+        const ok = await this.creditDeposit(netKey, token.address, userId, t, amount, token.asset);
+        if (ok) credited++;
+      }
     }
 
     await this.cursors.save({
@@ -207,7 +215,7 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     return {
       fromBlock: fromBlock.toString(),
       toBlock: toBlock.toString(),
-      found: transfers.length,
+      found,
       credited,
     };
   }
