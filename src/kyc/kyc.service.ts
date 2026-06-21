@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { Repository } from 'typeorm';
 import { KycConfig } from '../config/configuration';
 import { KycStatus, KycVerificationEntity } from '../database/entities/kyc-verification.entity';
@@ -19,6 +19,7 @@ import { verifyDiditSignature } from './providers/didit-webhook.util';
 import { DiditProvider } from './providers/didit.provider';
 import { KycProvider } from './providers/kyc-provider';
 import { ManualReviewProvider } from './providers/manual.provider';
+import { ZenttoKycProvider } from './providers/zentto-kyc.provider';
 
 export interface KycStatusView {
   id?: string;
@@ -50,15 +51,26 @@ export class KycService {
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<KycConfig>('kyc');
+    const didit = new DiditProvider({
+      apiKey: this.cfg.diditApiKey,
+      baseUrl: this.cfg.diditBaseUrl,
+      workflowId: this.cfg.diditWorkflowId,
+      callbackUrl: this.cfg.diditCallbackUrl,
+    });
+    // 'zentto-kyc' es el proveedor NATIVO (default); Didit queda como fallback.
     this.provider =
-      this.cfg.provider === 'didit'
-        ? new DiditProvider({
-            apiKey: this.cfg.diditApiKey,
-            baseUrl: this.cfg.diditBaseUrl,
-            workflowId: this.cfg.diditWorkflowId,
-            callbackUrl: this.cfg.diditCallbackUrl,
-          })
-        : new ManualReviewProvider();
+      this.cfg.provider === 'zentto-kyc'
+        ? new ZenttoKycProvider(
+            {
+              apiKey: this.cfg.zenttoKycApiKey,
+              baseUrl: this.cfg.zenttoKycBaseUrl,
+              callbackUrl: this.cfg.zenttoKycCallbackUrl,
+            },
+            this.cfg.diditApiKey ? didit : undefined,
+          )
+        : this.cfg.provider === 'didit'
+          ? didit
+          : new ManualReviewProvider();
     this.logger.log(`Proveedor KYC de liveness: ${this.provider.name}`);
   }
 
@@ -294,6 +306,55 @@ export class KycService {
       v.providerRef = String(body.session_id ?? v.providerRef ?? '');
       await this.repo.save(v);
       this.logger.log(`KYC ${v.id} → ${next} (Didit: ${diditStatus})`);
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Webhook del KYC NATIVO (zentto-kyc): verifica la firma HMAC-SHA256 sobre el
+   * body crudo (`${createdAt}.${rawBody}`) y aplica el resultado. Mapea por la
+   * sesión (providerRef). Idempotente.
+   */
+  async handleZenttoWebhook(
+    rawBody: Buffer,
+    headers: Record<string, string | string[] | undefined>,
+  ): Promise<{ ok: boolean }> {
+    const secret = this.cfg.zenttoKycWebhookSecret;
+    if (!secret) throw new UnauthorizedException('Webhook KYC sin secreto configurado');
+    const sig = String(headers['x-zentto-signature'] ?? '');
+    const createdAt = String(headers['x-zentto-created-at'] ?? '');
+    const canonical = `${createdAt}.${rawBody.toString('utf8')}`;
+    const expected = createHmac('sha256', secret).update(canonical).digest('hex');
+    const a = Buffer.from(sig);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      throw new UnauthorizedException('Firma de webhook inválida');
+    }
+
+    const body = JSON.parse(rawBody.toString('utf8')) as {
+      event?: string;
+      data?: { sessionId?: string; decision?: string; reason?: string };
+    };
+    const sessionId = String(body.data?.sessionId ?? '');
+    const decision = String(body.data?.decision ?? '');
+    const v = await this.repo.findOne({ where: { providerRef: sessionId } });
+    if (!v) {
+      this.logger.warn(`Webhook Zentto KYC para sesión desconocida: ${sessionId}`);
+      return { ok: true };
+    }
+    const map: Record<string, KycStatus> = {
+      approved: 'approved',
+      declined: 'rejected',
+      in_review: 'in_review',
+    };
+    const next = map[decision];
+    if (next) {
+      v.status = next;
+      v.livenessPassed =
+        next === 'approved' ? true : next === 'rejected' ? false : v.livenessPassed;
+      if (body.data?.reason) v.decisionReason = body.data.reason;
+      await this.repo.save(v);
+      this.logger.log(`KYC ${v.id} → ${next} (Zentto KYC: ${decision})`);
     }
     return { ok: true };
   }

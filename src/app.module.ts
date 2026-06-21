@@ -25,6 +25,7 @@ import { P2pMarketModule } from './marketplace/p2p-market.module';
 import { MiningModule } from './mining/mining.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { PaymentsModule } from './payments/payments.module';
+import { BinanceModule } from './binance/binance.module';
 import { P2pModule } from './p2p/p2p.module';
 import { RechargeModule } from './recharge/recharge.module';
 import { UsersModule } from './users/users.module';
@@ -54,6 +55,7 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     ComplianceModule,
     AnalyticsModule,
     P2pModule,
+    BinanceModule,
     EvmModule,
     PaymentsModule,
     CustodyModule,

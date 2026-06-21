@@ -58,7 +58,11 @@ export const envValidationSchema = Joi.object({
   COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
 
   CUSTODY_MNEMONIC: Joi.string().allow('').default(''),
-  KYC_PROVIDER: Joi.string().valid('manual', 'didit').default('manual'),
+  KYC_PROVIDER: Joi.string().valid('manual', 'didit', 'zentto-kyc').default('zentto-kyc'),
+  ZENTTO_KYC_API_KEY: Joi.string().allow('').default(''),
+  ZENTTO_KYC_BASE_URL: Joi.string().default('https://kyc.zentto.net'),
+  ZENTTO_KYC_CALLBACK_URL: Joi.string().allow('').default(''),
+  ZENTTO_KYC_WEBHOOK_SECRET: Joi.string().allow('').default(''),
   DIDIT_API_KEY: Joi.string().allow('').default(''),
   DIDIT_BASE_URL: Joi.string().default('https://verification.didit.me'),
   DIDIT_WORKFLOW_ID: Joi.string().allow('').default(''),
@@ -101,6 +105,12 @@ export const envValidationSchema = Joi.object({
   POLYGON_AMOY_USDC_ADDRESS: Joi.string().allow('').optional(),
   BSC_TESTNET_RPC_URL: Joi.string().allow('').optional(),
   BSC_TESTNET_USDC_ADDRESS: Joi.string().allow('').optional(),
+
+  // Binance Pay (comerciante entidad). Vacío => módulo deshabilitado (endpoints 503).
+  BINANCE_PAY_BASE_URL: Joi.string().default('https://bpay.binanceapi.com'),
+  BINANCE_PAY_MERCHANT_ID: Joi.string().allow('').default(''),
+  BINANCE_PAY_API_KEY: Joi.string().allow('').default(''),
+  BINANCE_PAY_API_SECRET: Joi.string().allow('').default(''),
 
   P2P_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   P2P_PORT: Joi.number().default(6001),

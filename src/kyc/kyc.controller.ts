@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  RawBodyRequest,
   Req,
   UploadedFiles,
   UseInterceptors,
@@ -76,6 +77,14 @@ export class KycController {
   @ApiOperation({ summary: 'Webhook de Didit con el resultado de la verificación' })
   diditWebhook(@Req() req: Request, @Body() body: Record<string, unknown>) {
     return this.kyc.handleDiditWebhook(body, req.headers);
+  }
+
+  // Webhook del KYC NATIVO (zentto-kyc): firma HMAC-SHA256 sobre el body crudo.
+  @Public()
+  @Post('webhook/zentto')
+  @ApiOperation({ summary: 'Webhook de Zentto KYC (verificación nativa)' })
+  zenttoWebhook(@Req() req: RawBodyRequest<Request>) {
+    return this.kyc.handleZenttoWebhook(req.rawBody ?? Buffer.from(''), req.headers);
   }
 
   // ⚠️ OPERADOR (backoffice): cola de revisión. Pendiente de role-gating real.
