@@ -190,12 +190,14 @@ export interface AuthConfig {
 function buildNetworks(): NetworkConfig[] {
   const extrasEnabled = (process.env.MULTI_NETWORK_ENABLED ?? 'true') === 'true';
   const confirmations = parseInt(process.env.EVM_CONFIRMATIONS ?? '3', 10);
+  const alchemyKey = process.env.ALCHEMY_API_KEY;
+  // Alchemy da getLogs de archivo (lo necesita el indexer de depósitos) y rate
+  // limits altos. Si hay key, se usa para todas las redes EVM soportadas.
+  const alchemyRpc = (subdomain: string) =>
+    alchemyKey ? `https://${subdomain}.g.alchemy.com/v2/${alchemyKey}` : null;
 
   const primaryRpc =
-    process.env.EVM_RPC_URL ||
-    (process.env.ALCHEMY_API_KEY
-      ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
-      : 'https://sepolia.drpc.org');
+    process.env.EVM_RPC_URL || alchemyRpc('eth-sepolia') || 'https://sepolia.drpc.org';
 
   const primary: NetworkConfig = {
     key: process.env.EVM_NETWORK_KEY ?? 'sepolia',
@@ -217,7 +219,10 @@ function buildNetworks(): NetworkConfig[] {
     family: 'evm',
     chainId: 80002,
     name: 'Polygon Amoy',
-    rpcUrl: process.env.POLYGON_AMOY_RPC_URL || 'https://rpc-amoy.polygon.technology',
+    rpcUrl:
+      process.env.POLYGON_AMOY_RPC_URL ||
+      alchemyRpc('polygon-amoy') ||
+      'https://rpc-amoy.polygon.technology',
     explorerUrl: 'https://amoy.polygonscan.com',
     nativeSymbol: 'POL',
     // USDC de Circle en Amoy.
@@ -234,7 +239,10 @@ function buildNetworks(): NetworkConfig[] {
     family: 'evm',
     chainId: 97,
     name: 'BSC Testnet',
-    rpcUrl: process.env.BSC_TESTNET_RPC_URL || 'https://bsc-testnet-rpc.publicnode.com',
+    rpcUrl:
+      process.env.BSC_TESTNET_RPC_URL ||
+      alchemyRpc('bnb-testnet') ||
+      'https://bsc-testnet-rpc.publicnode.com',
     explorerUrl: 'https://testnet.bscscan.com',
     nativeSymbol: 'tBNB',
     // USDC de testnet en BSC.
