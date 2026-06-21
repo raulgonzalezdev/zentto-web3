@@ -62,10 +62,13 @@ export class ZenttoKycApiService {
 
   /** Crea una sesión de verificación; devuelve su id (para enlazar los uploads). */
   async createSession(vendorData: string): Promise<string> {
+    const body: Record<string, unknown> = this.cfg.zenttoKycWorkflowId
+      ? { vendorData, workflowId: this.cfg.zenttoKycWorkflowId }
+      : { vendorData, features: ['id', 'liveness', 'face_match'] };
     const res = await fetch(`${this.base}/v1/sessions`, {
       method: 'POST',
       headers: this.headers({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ vendorData, features: ['id', 'liveness', 'face_match'] }),
+      body: JSON.stringify(body),
     });
     const data = (await res.json().catch(() => ({}))) as { session?: { id?: string } };
     if (!res.ok || !data.session?.id) {
