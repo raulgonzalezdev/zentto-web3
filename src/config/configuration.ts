@@ -158,7 +158,10 @@ export interface NetworkConfig {
   fallbackRpcUrl?: string;
   explorerUrl: string;
   nativeSymbol: string;
+  /** Dirección del token ERC-20/BEP-20 a vigilar (USDC en testnets, USDT en BSC). */
   usdcAddress: string;
+  /** Símbolo del asset del ledger a acreditar para esta red (USDC | USDT). */
+  asset: string;
   confirmations: number;
   isTestnet: boolean;
   /** El indexer escanea y los retiros operan en esta red. */
@@ -226,6 +229,7 @@ function buildNetworks(): NetworkConfig[] {
     explorerUrl: process.env.EVM_EXPLORER_URL ?? 'https://sepolia.etherscan.io',
     nativeSymbol: process.env.EVM_NATIVE_SYMBOL ?? 'ETH',
     usdcAddress: process.env.EVM_USDC_ADDRESS ?? '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+    asset: process.env.EVM_ASSET ?? 'USDC',
     confirmations,
     isTestnet: true,
     enabled: true,
@@ -247,6 +251,7 @@ function buildNetworks(): NetworkConfig[] {
     // USDC de Circle en Amoy.
     usdcAddress:
       process.env.POLYGON_AMOY_USDC_ADDRESS || '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582',
+    asset: 'USDC',
     confirmations: 5,
     isTestnet: true,
     enabled: extrasEnabled,
@@ -268,9 +273,30 @@ function buildNetworks(): NetworkConfig[] {
     // USDC de testnet en BSC.
     usdcAddress:
       process.env.BSC_TESTNET_USDC_ADDRESS || '0x64544969ed7EBf5f083679233325356EbE738930',
+    asset: 'USDC',
     confirmations: 6,
     isTestnet: true,
     enabled: extrasEnabled,
+    available: true,
+  };
+
+  // BSC MAINNET (dinero REAL) — USDT BEP-20, el rail por el que llegan los retiros
+  // de Binance. 18 decimales (no 6). Se habilita con BSC_MAINNET_ENABLED=true.
+  const bscMainnet: NetworkConfig = {
+    key: 'bsc-mainnet',
+    family: 'evm',
+    chainId: 56,
+    name: 'BSC',
+    rpcUrl: process.env.BSC_MAINNET_RPC_URL || alchemyRpc('bnb-mainnet') || 'https://bsc-dataseed.binance.org',
+    fallbackRpcUrl: 'https://bsc-rpc.publicnode.com',
+    explorerUrl: 'https://bscscan.com',
+    nativeSymbol: 'BNB',
+    // USDT BEP-20 (Binance-Peg USDT). 18 decimales.
+    usdcAddress: process.env.BSC_MAINNET_USDT_ADDRESS || '0x55d398326f99059fF775485246999027B3197955',
+    asset: 'USDT',
+    confirmations: parseInt(process.env.BSC_MAINNET_CONFIRMATIONS ?? '6', 10),
+    isTestnet: false,
+    enabled: (process.env.BSC_MAINNET_ENABLED ?? 'false') === 'true',
     available: true,
   };
 
@@ -285,6 +311,7 @@ function buildNetworks(): NetworkConfig[] {
     nativeSymbol: 'TRX',
     // USDT TRC-20 en Nile testnet.
     usdcAddress: process.env.TRON_USDT_ADDRESS || 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf',
+    asset: 'USDT',
     confirmations: 19,
     isTestnet: true,
     enabled: extrasEnabled,
@@ -303,13 +330,14 @@ function buildNetworks(): NetworkConfig[] {
     // Issuer de USDC de Circle en testnet (asset code USDC).
     usdcAddress:
       process.env.STELLAR_USDC_ISSUER || 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+    asset: 'USDC',
     confirmations: 1,
     isTestnet: true,
     enabled: extrasEnabled,
     available: true,
   };
 
-  return [primary, polygonAmoy, bscTestnet, tron, stellar];
+  return [primary, polygonAmoy, bscTestnet, bscMainnet, tron, stellar];
 }
 
 export default () => ({
