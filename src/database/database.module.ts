@@ -18,6 +18,7 @@ import { LedgerEntryEntity } from './entities/ledger-entry.entity';
 import { PaymentEntity } from './entities/payment.entity';
 import { TransactionEntity } from './entities/transaction.entity';
 import { UserEntity } from './entities/user.entity';
+import { WithdrawAddressEntity } from './entities/withdraw-address.entity';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { UserEntity } from './entities/user.entity';
             P2pMessageEntity,
             PaymentMethodEntity,
             AccountTokenEntity,
+            WithdrawAddressEntity,
           ],
           synchronize: db.synchronize,
           logging: db.logging,

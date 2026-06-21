@@ -1,7 +1,12 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
-import { CreateP2pOrderDto, OpenDisputeDto, PostP2pMessageDto } from './dto/p2p.dto';
+import {
+  ConfirmTradeDto,
+  CreateP2pOrderDto,
+  OpenDisputeDto,
+  PostP2pMessageDto,
+} from './dto/p2p.dto';
 import { P2pMarketService } from './p2p-market.service';
 
 @ApiTags('p2p')
@@ -58,15 +63,21 @@ export class P2pMarketController {
   }
 
   @Post('trades/:id/confirm')
-  @ApiOperation({ summary: 'Vendedor confirma fiat recibido → libera cripto al comprador' })
-  confirm(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.market.confirmTrade(user.sub, id);
+  @ApiOperation({ summary: 'Vendedor confirma fiat recibido → libera cripto al comprador (2FA)' })
+  confirm(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ConfirmTradeDto) {
+    return this.market.confirmTrade(user.sub, id, dto?.totpCode);
   }
 
   @Post('trades/:id/paid')
   @ApiOperation({ summary: 'Comprador marca el fiat como pagado → inicia ventana de liberación' })
   markPaid(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.market.markPaid(user.sub, id);
+  }
+
+  @Post('trades/:id/extend')
+  @ApiOperation({ summary: 'Extender la ventana de tiempo del trade (+15 min, tope 2)' })
+  extend(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.market.extendTrade(user.sub, id);
   }
 
   @Post('trades/:id/dispute')

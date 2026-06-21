@@ -4,15 +4,18 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { DataSource, Repository } from 'typeorm';
 import { formatUnits } from 'viem';
-import { EvmConfig, IndexerConfig } from '../config/configuration';
+import { IndexerConfig } from '../config/configuration';
 import { ChainCursorEntity } from '../database/entities/chain-cursor.entity';
 import { ChainDepositEntity } from '../database/entities/chain-deposit.entity';
 import { DepositAddressEntity } from '../database/entities/deposit-address.entity';
 import { PaymentEntity } from '../database/entities/payment.entity';
 import { EvmService } from '../evm/evm.service';
+import { FEE_ACCOUNT, FeeService } from '../fees/fee.service';
+import { isPositive } from '../common/money.util';
 import { LedgerService } from '../ledger/ledger.service';
 
-const NETWORK = 'evm';
+// Las direcciones de depósito EVM se almacenan bajo esta clave canónica (compartida).
+const NETWORK_EVM = 'evm';
 const SYSTEM_CUSTODY = 'custody';
 
 export interface ScanResult {
@@ -32,7 +35,6 @@ export interface ScanResult {
 @Injectable()
 export class DepositIndexerService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(DepositIndexerService.name);
-  private readonly evmCfg: EvmConfig;
   private readonly cfg: IndexerConfig;
   private scanning = false;
   private timer?: NodeJS.Timeout;
@@ -45,10 +47,10 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     private readonly chainDeposits: Repository<ChainDepositEntity>,
     private readonly evm: EvmService,
     private readonly ledger: LedgerService,
+    private readonly fees: FeeService,
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
-    this.evmCfg = config.getOrThrow<EvmConfig>('evm');
     this.cfg = config.getOrThrow<IndexerConfig>('indexer');
   }
 
@@ -67,80 +69,99 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     return this.chainDeposits.find({ where: { userId }, order: { createdAt: 'DESC' }, take: 100 });
   }
 
-  /** Un ciclo de escaneo: lee Transfers nuevos y acredita los confirmados. */
+  /** Un ciclo de escaneo: recorre TODAS las redes EVM habilitadas. */
   async scan(): Promise<ScanResult> {
     if (this.scanning) return { fromBlock: '0', toBlock: '0', found: 0, credited: 0 };
     this.scanning = true;
     try {
-      const addrRows = await this.deposits.find({ where: { network: NETWORK } });
+      // Direcciones de depósito EVM (compartidas entre redes de la familia).
+      const addrRows = await this.deposits.find({ where: { network: NETWORK_EVM } });
       const byAddress = new Map(addrRows.map((a) => [a.address.toLowerCase(), a.userId]));
       const addresses = addrRows.map((a) => a.address);
       if (addresses.length === 0) {
         return { fromBlock: '0', toBlock: '0', found: 0, credited: 0 };
       }
 
-      const current = await this.evm.currentBlock();
-      const toBlockMax = current - BigInt(this.cfg.confirmations);
-      if (toBlockMax <= 0n) return { fromBlock: '0', toBlock: '0', found: 0, credited: 0 };
-
-      const cursor = await this.cursors.findOne({ where: { network: NETWORK } });
-      let fromBlock = cursor
-        ? BigInt(cursor.lastBlock) + 1n
-        : toBlockMax - BigInt(this.cfg.scanRange); // bootstrap: solo lo reciente
-      if (fromBlock < 0n) fromBlock = 0n;
-      let toBlock = toBlockMax;
-      if (toBlock - fromBlock > BigInt(this.cfg.scanRange)) {
-        toBlock = fromBlock + BigInt(this.cfg.scanRange); // escaneo por tramos
-      }
-      if (toBlock < fromBlock)
-        return {
-          fromBlock: fromBlock.toString(),
-          toBlock: toBlock.toString(),
-          found: 0,
-          credited: 0,
-        };
-
-      const transfers = await this.evm.getErc20TransfersTo(
-        this.evmCfg.usdcAddress,
-        addresses,
-        fromBlock,
-        toBlock,
-      );
-      const decimals = transfers.length ? await this.evm.tokenDecimals(this.evmCfg.usdcAddress) : 6;
-
+      let found = 0;
       let credited = 0;
-      for (const t of transfers) {
-        const userId = byAddress.get(t.to);
-        if (!userId) continue;
-        const amount = formatUnits(t.value, decimals);
-        const ok = await this.creditDeposit(userId, t, amount);
-        if (ok) credited++;
+      let lastFrom = '0';
+      let lastTo = '0';
+      for (const netKey of this.evm.evmKeys) {
+        const r = await this.scanNetwork(netKey, addresses, byAddress).catch((err) => {
+          this.logger.warn(`Indexer ${netKey}: ${(err as Error).message}`);
+          return null;
+        });
+        if (!r) continue;
+        found += r.found;
+        credited += r.credited;
+        lastFrom = r.fromBlock;
+        lastTo = r.toBlock;
       }
-
-      await this.cursors.save({
-        network: NETWORK,
-        lastBlock: toBlock.toString(),
-      } as ChainCursorEntity);
       if (credited > 0) this.logger.log(`Indexer: ${credited} depósito(s) acreditados`);
-      return {
-        fromBlock: fromBlock.toString(),
-        toBlock: toBlock.toString(),
-        found: transfers.length,
-        credited,
-      };
+      return { fromBlock: lastFrom, toBlock: lastTo, found, credited };
     } finally {
       this.scanning = false;
     }
   }
 
+  /** Escaneo de UNA red EVM: avanza su cursor propio y acredita los confirmados. */
+  private async scanNetwork(
+    netKey: string,
+    addresses: string[],
+    byAddress: Map<string, string>,
+  ): Promise<ScanResult> {
+    const netCfg = this.evm.cfgOf(netKey);
+    const usdc = netCfg.usdcAddress;
+    const confirmations = netCfg.confirmations;
+
+    const current = await this.evm.currentBlock(netKey);
+    const toBlockMax = current - BigInt(confirmations);
+    if (toBlockMax <= 0n) return { fromBlock: '0', toBlock: '0', found: 0, credited: 0 };
+
+    const cursor = await this.cursors.findOne({ where: { network: netKey } });
+    let fromBlock = cursor
+      ? BigInt(cursor.lastBlock) + 1n
+      : toBlockMax - BigInt(this.cfg.scanRange); // bootstrap: solo lo reciente
+    if (fromBlock < 0n) fromBlock = 0n;
+    let toBlock = toBlockMax;
+    if (toBlock - fromBlock > BigInt(this.cfg.scanRange)) {
+      toBlock = fromBlock + BigInt(this.cfg.scanRange);
+    }
+    if (toBlock < fromBlock) {
+      return { fromBlock: fromBlock.toString(), toBlock: toBlock.toString(), found: 0, credited: 0 };
+    }
+
+    const transfers = await this.evm.getErc20TransfersTo(usdc, addresses, fromBlock, toBlock, netKey);
+    const decimals = transfers.length ? await this.evm.tokenDecimals(usdc, netKey) : 6;
+
+    let credited = 0;
+    for (const t of transfers) {
+      const userId = byAddress.get(t.to);
+      if (!userId) continue;
+      const amount = formatUnits(t.value, decimals);
+      const ok = await this.creditDeposit(netKey, usdc, userId, t, amount);
+      if (ok) credited++;
+    }
+
+    await this.cursors.save({ network: netKey, lastBlock: toBlock.toString() } as ChainCursorEntity);
+    return {
+      fromBlock: fromBlock.toString(),
+      toBlock: toBlock.toString(),
+      found: transfers.length,
+      credited,
+    };
+  }
+
   /** Acredita UN depósito de forma atómica e idempotente. Devuelve false si ya estaba. */
   private async creditDeposit(
+    network: string,
+    tokenAddress: string,
     userId: string,
     t: { txHash: string; logIndex: number; value: bigint; blockNumber: bigint },
     amount: string,
   ): Promise<boolean> {
     const exists = await this.chainDeposits.findOne({
-      where: { network: NETWORK, txHash: t.txHash, logIndex: t.logIndex },
+      where: { network, txHash: t.txHash, logIndex: t.logIndex },
     });
     if (exists) return false;
 
@@ -154,34 +175,53 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
           manager,
         );
         const userAcc = await this.ledger.getOrCreateAccount('user', userId, asset, manager);
+        const feeAcc = await this.ledger.getOrCreateAccount('system', FEE_ACCOUNT, asset, manager);
+
+        // Comisión de recarga: el usuario recibe el neto; la comisión va a tesorería.
+        const quote = this.fees.quoteDeposit(amount);
 
         const payment = manager.getRepository(PaymentEntity).create({
           id: randomUUID(),
-          idempotencyKey: `deposit:${t.txHash}:${t.logIndex}`,
+          idempotencyKey: `deposit:${network}:${t.txHash}:${t.logIndex}`,
           userId,
           type: 'deposit',
           asset,
-          amount,
+          amount: quote.net,
           status: 'completed',
           fromAccountId: custody.id,
           toAccountId: userAcc.id,
           counterparty: t.txHash,
-          metadata: { txHash: t.txHash, logIndex: t.logIndex },
+          metadata: {
+            network,
+            txHash: t.txHash,
+            logIndex: t.logIndex,
+            grossAmount: amount,
+            fee: quote.platformFee,
+          },
         });
         await manager.getRepository(PaymentEntity).save(payment);
 
-        // Doble entrada: custodia (activo on-chain) ↔ saldo del usuario.
-        await this.ledger.postJournal(manager, payment.id, [
-          { accountId: custody.id, direction: 'debit', amount, asset },
-          { accountId: userAcc.id, direction: 'credit', amount, asset },
-        ]);
+        // Doble entrada: custodia (activo on-chain) ↔ saldo neto del usuario + comisión.
+        const entries = [
+          { accountId: custody.id, direction: 'debit' as const, amount, asset },
+          { accountId: userAcc.id, direction: 'credit' as const, amount: quote.net, asset },
+        ];
+        if (isPositive(quote.platformFee)) {
+          entries.push({
+            accountId: feeAcc.id,
+            direction: 'credit' as const,
+            amount: quote.platformFee,
+            asset,
+          });
+        }
+        await this.ledger.postJournal(manager, payment.id, entries);
 
         await manager.getRepository(ChainDepositEntity).save({
           id: randomUUID(),
-          network: NETWORK,
+          network,
           txHash: t.txHash,
           logIndex: t.logIndex,
-          tokenAddress: this.evmCfg.usdcAddress,
+          tokenAddress,
           asset,
           toAddress: '',
           userId,

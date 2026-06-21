@@ -72,6 +72,13 @@ export const envValidationSchema = Joi.object({
   FAUCET_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   FAUCET_MAX: Joi.number().min(0).default(1000),
 
+  // Comisiones de plataforma (modelo de negocio). Porcentajes en fracción (0.005 = 0.5%).
+  FEE_P2P_PCT: Joi.number().min(0).max(0.2).default(0.005),
+  FEE_DEPOSIT_PCT: Joi.number().min(0).max(0.2).default(0.01),
+  FEE_WITHDRAW_PCT: Joi.number().min(0).max(0.2).default(0.01),
+  FEE_WITHDRAW_NETWORK: Joi.number().min(0).default(0.5),
+  FEE_MIN: Joi.number().min(0).default(0.01),
+
   // Si se define, EVM + indexer usan Alchemy (https://eth-sepolia.g.alchemy.com/v2/<key>).
   ALCHEMY_API_KEY: Joi.string().allow('').default(''),
   // Override directo del RPC; tiene prioridad sobre ALCHEMY_API_KEY.
@@ -81,6 +88,14 @@ export const envValidationSchema = Joi.object({
   EVM_EXPLORER_URL: Joi.string().default('https://sepolia.etherscan.io'),
   EVM_NATIVE_SYMBOL: Joi.string().default('ETH'),
   EVM_USDC_ADDRESS: Joi.string().default('0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'),
+  EVM_NETWORK_KEY: Joi.string().default('sepolia'),
+
+  // Multi-red: habilita redes EVM adicionales (Polygon Amoy, BSC testnet).
+  MULTI_NETWORK_ENABLED: Joi.boolean().truthy('true').falsy('false').default(true),
+  POLYGON_AMOY_RPC_URL: Joi.string().allow('').optional(),
+  POLYGON_AMOY_USDC_ADDRESS: Joi.string().allow('').optional(),
+  BSC_TESTNET_RPC_URL: Joi.string().allow('').optional(),
+  BSC_TESTNET_USDC_ADDRESS: Joi.string().allow('').optional(),
 
   P2P_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   P2P_PORT: Joi.number().default(6001),

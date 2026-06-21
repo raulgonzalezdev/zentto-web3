@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { DataSource, Repository } from 'typeorm';
+import { AuthService } from '../auth/auth.service';
 import { cmpStr, isPositive } from '../common/money.util';
 import { LedgerConfig } from '../config/configuration';
 import { PaymentEntity } from '../database/entities/payment.entity';
@@ -29,6 +30,7 @@ export class PaymentsService {
     @InjectRepository(PaymentEntity) private readonly payments: Repository<PaymentEntity>,
     @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
     private readonly ledger: LedgerService,
+    private readonly auth: AuthService,
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
@@ -128,13 +130,23 @@ export class PaymentsService {
     assetRaw: string,
     amount: string,
     idempotencyKey: string,
+    totpCode?: string,
   ): Promise<PaymentEntity> {
     const asset = this.assertAsset(assetRaw);
     this.assertAmount(amount);
 
+    // Reintento idempotente: devuelve el pago previo sin re-exigir TOTP (el código
+    // rota cada 30s y la operación ya se autorizó la primera vez).
+    const already = await this.payments.findOne({ where: { userId, idempotencyKey } });
+    if (already) return already;
+
     const recipient = await this.users.findOne({ where: { email: toEmail.trim().toLowerCase() } });
     if (!recipient) throw new BadRequestException('El destinatario no existe');
     if (recipient.id === userId) throw new BadRequestException('No puedes transferirte a ti mismo');
+    const sender = await this.users.findOne({ where: { id: userId } });
+
+    // Segundo factor obligatorio para mover dinero (Google Authenticator).
+    await this.auth.assertStepUp(userId, totpCode);
 
     return this.runIdempotent(userId, idempotencyKey, async () => {
       return this.dataSource.transaction(async (manager) => {
@@ -146,7 +158,8 @@ export class PaymentsService {
           throw new BadRequestException(`Saldo insuficiente: disponible ${available} ${asset}`);
         }
 
-        const payment = manager.getRepository(PaymentEntity).create({
+        const repo = manager.getRepository(PaymentEntity);
+        const payment = repo.create({
           id: randomUUID(),
           idempotencyKey,
           userId,
@@ -158,7 +171,25 @@ export class PaymentsService {
           toAccountId: to.id,
           counterparty: recipient.email,
         });
-        await manager.getRepository(PaymentEntity).save(payment);
+        await repo.save(payment);
+
+        // Fila ESPEJO para el receptor: así la transferencia aparece también en SU
+        // historial (antes solo el emisor tenía registro). No mueve saldo (un solo
+        // asiento); es solo registro contable visible para la contraparte.
+        const incoming = repo.create({
+          id: randomUUID(),
+          idempotencyKey: `${idempotencyKey}:in`,
+          userId: recipient.id,
+          type: 'receive',
+          asset,
+          amount,
+          status: 'completed',
+          fromAccountId: from.id,
+          toAccountId: to.id,
+          counterparty: sender?.email ?? userId,
+          metadata: { mirrorOf: payment.id },
+        });
+        await repo.save(incoming);
 
         await this.ledger.postJournal(manager, payment.id, [
           { accountId: from.id, direction: 'debit', amount, asset },

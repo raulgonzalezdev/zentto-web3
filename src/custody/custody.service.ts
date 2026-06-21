@@ -5,9 +5,11 @@ import { randomUUID } from 'crypto';
 import { DataSource, Repository } from 'typeorm';
 import { Chain, createWalletClient, defineChain, http, parseUnits, WalletClient } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
-import { CustodyConfig, EvmConfig } from '../config/configuration';
+import { CustodyConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
 import { DepositAddressEntity } from '../database/entities/deposit-address.entity';
 
+// Dirección de depósito compartida por TODA la familia EVM (misma clave HD → misma
+// address en Sepolia/Polygon/BSC). Por eso se almacena bajo una clave canónica.
 const NETWORK_EVM = 'evm';
 
 // El hot wallet (tesorería que paga los retiros) usa la cuenta HD 0; las
@@ -41,8 +43,9 @@ const ERC20_TRANSFER_ABI = [
 export class CustodyService implements OnModuleInit {
   private readonly logger = new Logger(CustodyService.name);
   private readonly custody: CustodyConfig;
-  private readonly evm: EvmConfig;
-  private readonly chain: Chain;
+  /** Redes EVM operativas, por clave (chain viem + metadatos). */
+  private readonly evmNets = new Map<string, { cfg: NetworkConfig; chain: Chain }>();
+  private readonly primaryKey: string;
 
   constructor(
     @InjectRepository(DepositAddressEntity)
@@ -51,22 +54,34 @@ export class CustodyService implements OnModuleInit {
     config: ConfigService,
   ) {
     this.custody = config.getOrThrow<CustodyConfig>('custody');
-    this.evm = config.getOrThrow<EvmConfig>('evm');
-    this.chain = defineChain({
-      id: this.evm.chainId,
-      name: this.evm.chainName,
-      nativeCurrency: { name: this.evm.nativeSymbol, symbol: this.evm.nativeSymbol, decimals: 18 },
-      rpcUrls: { default: { http: [this.evm.rpcUrl] } },
-      blockExplorers: { default: { name: 'Explorer', url: this.evm.explorerUrl } },
-    });
+    const list = config.getOrThrow<NetworksConfig>('networks').list;
+    const evmNets = list.filter((n) => n.family === 'evm' && n.enabled);
+    for (const cfg of evmNets) {
+      const chain = defineChain({
+        id: cfg.chainId,
+        name: cfg.name,
+        nativeCurrency: { name: cfg.nativeSymbol, symbol: cfg.nativeSymbol, decimals: 18 },
+        rpcUrls: { default: { http: [cfg.rpcUrl] } },
+        blockExplorers: { default: { name: 'Explorer', url: cfg.explorerUrl } },
+      });
+      this.evmNets.set(cfg.key, { cfg, chain });
+    }
+    this.primaryKey = evmNets[0]?.key ?? 'sepolia';
   }
 
   onModuleInit(): void {
     if (this.enabled) {
+      const nets = [...this.evmNets.values()].map((n) => n.cfg.name).join(', ');
       this.logger.log(
-        `Hot wallet de tesorería: ${this.hotWalletAddress()} — fondéalo con ${this.evm.nativeSymbol} (gas) + USDC de testnet para procesar retiros`,
+        `Hot wallet de tesorería: ${this.hotWalletAddress()} — fondéalo con gas + USDC en: ${nets}`,
       );
     }
+  }
+
+  private evmNet(key?: string): { cfg: NetworkConfig; chain: Chain } {
+    const e = this.evmNets.get(key ?? this.primaryKey);
+    if (!e) throw new ServiceUnavailableException(`Red EVM no soportada: ${key}`);
+    return e;
   }
 
   get enabled(): boolean {
@@ -94,23 +109,24 @@ export class CustodyService implements OnModuleInit {
 
   /**
    * Firma y emite una transferencia USDC desde el hot wallet hacia una address
-   * externa. Devuelve el txHash. Lanza si falta gas/saldo (lo maneja el worker
-   * de retiros liberando el hold = reembolso).
+   * externa, EN LA RED indicada. Devuelve el txHash. Lanza si falta gas/saldo (lo
+   * maneja el worker de retiros liberando el hold = reembolso).
    */
-  async sendUsdc(toAddress: string, amount: string): Promise<string> {
+  async sendUsdc(toAddress: string, amount: string, networkKey?: string): Promise<string> {
     if (!this.enabled) {
       throw new ServiceUnavailableException('Custodia no configurada (CUSTODY_MNEMONIC ausente)');
     }
+    const { cfg, chain } = this.evmNet(networkKey);
     const wallet: WalletClient = createWalletClient({
       account: this.hotAccount(),
-      chain: this.chain,
-      transport: http(this.evm.rpcUrl),
+      chain,
+      transport: http(cfg.rpcUrl),
     });
     const value = parseUnits(amount, 6); // USDC = 6 decimales
     return wallet.writeContract({
       account: this.hotAccount(),
-      chain: this.chain,
-      address: this.evm.usdcAddress as `0x${string}`,
+      chain,
+      address: cfg.usdcAddress as `0x${string}`,
       abi: ERC20_TRANSFER_ABI,
       functionName: 'transfer',
       args: [toAddress as `0x${string}`, value],
@@ -156,16 +172,19 @@ export class CustodyService implements OnModuleInit {
     throw new ServiceUnavailableException('No se pudo asignar dirección de depósito');
   }
 
-  async depositInfo(userId: string) {
+  async depositInfo(userId: string, networkKey?: string) {
+    const { cfg } = this.evmNet(networkKey);
     const dep = await this.getOrCreateEvmDepositAddress(userId);
     return {
-      network: dep.network,
-      chainName: this.evm.chainName,
-      address: dep.address,
-      asset: this.evm.nativeSymbol,
-      token: this.evm.usdcAddress,
-      explorerUrl: `${this.evm.explorerUrl}/address/${dep.address}`,
-      note: 'Envía USDC de testnet a esta dirección. El indexer detecta el depósito y acredita tu saldo.',
+      network: cfg.key,
+      chainName: cfg.name,
+      chainId: cfg.chainId,
+      nativeSymbol: cfg.nativeSymbol,
+      address: dep.address, // misma address para toda la familia EVM
+      asset: 'USDC',
+      token: cfg.usdcAddress,
+      explorerUrl: `${cfg.explorerUrl}/address/${dep.address}`,
+      note: `Envía USDC en ${cfg.name} a esta dirección. El indexer detecta el depósito y acredita tu saldo. La misma dirección sirve para todas las redes EVM.`,
     };
   }
 }

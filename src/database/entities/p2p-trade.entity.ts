@@ -58,6 +58,10 @@ export class P2pTradeEntity {
   @Column({ type: 'timestamptz', nullable: true })
   releaseDeadline!: Date | null;
 
+  /** Nº de veces que se extendió la ventana de tiempo (tope para evitar abuso). */
+  @Column({ type: 'int', default: 0 })
+  extensions!: number;
+
   @Column({ type: 'text', nullable: true })
   disputeReason!: string | null;
 
@@ -72,6 +76,10 @@ export class P2pTradeEntity {
   /** Resultado del árbitro: 'released' (al comprador) | 'refunded' (al vendedor). */
   @Column({ type: 'varchar', length: 12, nullable: true })
   resolution!: string | null;
+
+  /** Comisión de plataforma cobrada al liberar el cripto (transparencia). */
+  @Column({ type: 'numeric', precision: 38, scale: 18, default: 0 })
+  feeAmount!: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

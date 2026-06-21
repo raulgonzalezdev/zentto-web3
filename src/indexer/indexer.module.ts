@@ -5,6 +5,7 @@ import { ChainDepositEntity } from '../database/entities/chain-deposit.entity';
 import { DepositAddressEntity } from '../database/entities/deposit-address.entity';
 import { PaymentEntity } from '../database/entities/payment.entity';
 import { EvmModule } from '../evm/evm.module';
+import { FeesModule } from '../fees/fees.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { DepositIndexerService } from './deposit-indexer.service';
 import { IndexerController } from './indexer.controller';
@@ -19,6 +20,7 @@ import { IndexerController } from './indexer.controller';
     ]),
     EvmModule,
     LedgerModule,
+    FeesModule,
   ],
   controllers: [IndexerController],
   providers: [DepositIndexerService],

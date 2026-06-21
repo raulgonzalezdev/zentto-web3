@@ -222,6 +222,27 @@ export class AuthService {
     return authenticator.verify({ token: code, secret: user.totpSecret });
   }
 
+  /**
+   * Step-up de autenticación para operaciones sensibles (mover dinero): exige un
+   * código TOTP válido de Google Authenticator. Reutilizado por transferencias,
+   * liberación de cripto P2P y retiros. Si el usuario no tiene 2FA, lo obliga a
+   * activarlo antes de operar (garantía de segundo factor para los fondos).
+   */
+  async assertStepUp(userId: string, totpCode?: string): Promise<void> {
+    const user = await this.getById(userId);
+    if (!user.totpEnabled) {
+      throw new BadRequestException(
+        'Activa Google Authenticator (2FA) para autorizar movimientos de dinero',
+      );
+    }
+    if (!totpCode) {
+      throw new BadRequestException('Código de Google Authenticator requerido para autorizar');
+    }
+    if (!this.verifyTotp(user, totpCode)) {
+      throw new UnauthorizedException('Código de Google Authenticator inválido');
+    }
+  }
+
   // ─────────────────────────── 2FA (TOTP) ───────────────────────────
 
   /** Genera (o regenera) un secreto TOTP pendiente y devuelve el QR para escanear. */

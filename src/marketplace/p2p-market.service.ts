@@ -11,8 +11,10 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { DataSource, In, LessThan, Repository } from 'typeorm';
+import { AuthService } from '../auth/auth.service';
 import { cmpStr, isPositive } from '../common/money.util';
 import { LedgerConfig } from '../config/configuration';
+import { FEE_ACCOUNT, FeeService } from '../fees/fee.service';
 import { P2pMessageEntity } from '../database/entities/p2p-message.entity';
 import { P2pOrderEntity, P2pSide } from '../database/entities/p2p-order.entity';
 import { P2pTradeEntity } from '../database/entities/p2p-trade.entity';
@@ -39,6 +41,8 @@ export interface CreateOrderInput {
 /** Ventanas de tiempo del escrow (anti-colgado / arbitraje). */
 const PAYMENT_WINDOW_MS = 15 * 60_000; // comprador: marcar pagado en 15 min
 const RELEASE_WINDOW_MS = 30 * 60_000; // vendedor: liberar en 30 min tras el pago
+const EXTENSION_MS = 15 * 60_000; // cada extensión añade 15 min
+const MAX_EXTENSIONS = 2; // tope de extensiones antes de forzar disputa
 
 /** Referencia de precio de mercado (USDT/VES). Cache para no golpear el proveedor. */
 const RATE_TTL_MS = 5 * 60_000;
@@ -71,6 +75,8 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
     @InjectRepository(P2pMessageEntity) private readonly messages: Repository<P2pMessageEntity>,
     @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
     private readonly ledger: LedgerService,
+    private readonly auth: AuthService,
+    private readonly fees: FeeService,
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
@@ -237,7 +243,9 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** El VENDEDOR confirma que recibió el fiat → libera el cripto al comprador. */
-  async confirmTrade(userId: string, tradeId: string): Promise<{ ok: boolean }> {
+  async confirmTrade(userId: string, tradeId: string, totpCode?: string): Promise<{ ok: boolean }> {
+    // Liberar cripto mueve fondos → segundo factor obligatorio (Google Authenticator).
+    await this.auth.assertStepUp(userId, totpCode);
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(P2pTradeEntity);
       const trade = await repo.findOne({ where: { id: tradeId } });
@@ -260,11 +268,24 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
         trade.asset,
         manager,
       );
+      // Comisión de plataforma: el comprador recibe el neto; la comisión va a tesorería.
+      const quote = this.fees.quoteP2p(trade.amount);
+      const feeAcc = await this.ledger.getOrCreateAccount('system', FEE_ACCOUNT, trade.asset, manager);
       if (trade.holdId) await this.ledger.setHoldStatus(manager, trade.holdId, 'committed');
-      await this.ledger.postJournal(manager, trade.id, [
-        { accountId: sellerAcc.id, direction: 'debit', amount: trade.amount, asset: trade.asset },
-        { accountId: buyerAcc.id, direction: 'credit', amount: trade.amount, asset: trade.asset },
-      ]);
+      const entries = [
+        { accountId: sellerAcc.id, direction: 'debit' as const, amount: trade.amount, asset: trade.asset },
+        { accountId: buyerAcc.id, direction: 'credit' as const, amount: quote.net, asset: trade.asset },
+      ];
+      if (isPositive(quote.platformFee)) {
+        entries.push({
+          accountId: feeAcc.id,
+          direction: 'credit' as const,
+          amount: quote.platformFee,
+          asset: trade.asset,
+        });
+      }
+      await this.ledger.postJournal(manager, trade.id, entries);
+      trade.feeAmount = quote.platformFee;
       trade.status = 'completed';
       await repo.save(trade);
       return { ok: true };
@@ -301,6 +322,46 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
     trade.releaseDeadline = new Date(Date.now() + RELEASE_WINDOW_MS);
     await this.trades.save(trade);
     return { ok: true };
+  }
+
+  /**
+   * Extiende la ventana de tiempo activa (pago o liberación) +15 min. Cualquiera de
+   * las partes puede hacerlo, hasta MAX_EXTENSIONS veces. Agotadas las extensiones,
+   * el worker escala a disputa. Devuelve los límites y extensiones restantes.
+   */
+  async extendTrade(
+    userId: string,
+    tradeId: string,
+  ): Promise<{ ok: boolean; extensions: number; extensionsLeft: number; deadline: Date | null }> {
+    const trade = await this.trades.findOne({ where: { id: tradeId } });
+    if (!trade) throw new NotFoundException('Trade no encontrado');
+    if (trade.buyerUserId !== userId && trade.sellerUserId !== userId) {
+      throw new ForbiddenException('No participas en este trade');
+    }
+    if (trade.status !== 'pending' && trade.status !== 'paid') {
+      throw new BadRequestException('Solo se puede extender un trade en espera');
+    }
+    if (trade.extensions >= MAX_EXTENSIONS) {
+      throw new BadRequestException(
+        'Se agotaron las extensiones de tiempo. Si hay un problema, abre una disputa.',
+      );
+    }
+    const now = Date.now();
+    if (trade.status === 'pending') {
+      const base = trade.paymentDeadline ? trade.paymentDeadline.getTime() : now;
+      trade.paymentDeadline = new Date(Math.max(base, now) + EXTENSION_MS);
+    } else {
+      const base = trade.releaseDeadline ? trade.releaseDeadline.getTime() : now;
+      trade.releaseDeadline = new Date(Math.max(base, now) + EXTENSION_MS);
+    }
+    trade.extensions += 1;
+    await this.trades.save(trade);
+    return {
+      ok: true,
+      extensions: trade.extensions,
+      extensionsLeft: MAX_EXTENSIONS - trade.extensions,
+      deadline: trade.status === 'pending' ? trade.paymentDeadline : trade.releaseDeadline,
+    };
   }
 
   /** Cualquier parte abre una disputa (la resuelve un árbitro). El escrow sigue retenido. */
@@ -347,11 +408,23 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
           trade.asset,
           manager,
         );
+        const quote = this.fees.quoteP2p(trade.amount);
+        const feeAcc = await this.ledger.getOrCreateAccount('system', FEE_ACCOUNT, trade.asset, manager);
         if (trade.holdId) await this.ledger.setHoldStatus(manager, trade.holdId, 'committed');
-        await this.ledger.postJournal(manager, trade.id, [
-          { accountId: sellerAcc.id, direction: 'debit', amount: trade.amount, asset: trade.asset },
-          { accountId: buyerAcc.id, direction: 'credit', amount: trade.amount, asset: trade.asset },
-        ]);
+        const entries = [
+          { accountId: sellerAcc.id, direction: 'debit' as const, amount: trade.amount, asset: trade.asset },
+          { accountId: buyerAcc.id, direction: 'credit' as const, amount: quote.net, asset: trade.asset },
+        ];
+        if (isPositive(quote.platformFee)) {
+          entries.push({
+            accountId: feeAcc.id,
+            direction: 'credit' as const,
+            amount: quote.platformFee,
+            asset: trade.asset,
+          });
+        }
+        await this.ledger.postJournal(manager, trade.id, entries);
+        trade.feeAmount = quote.platformFee;
         trade.status = 'completed';
       } else {
         if (trade.holdId) await this.ledger.setHoldStatus(manager, trade.holdId, 'released');
@@ -390,6 +463,20 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
         take: 50,
       });
       for (const t of expiredPending) {
+        // Si hubo interacción (chat o extensiones), el caso es ambiguo → disputa
+        // para que un árbitro decida. Sin interacción → reembolso al vendedor.
+        const engaged =
+          t.extensions > 0 || (await this.messages.count({ where: { tradeId: t.id } })) > 0;
+        if (engaged) {
+          const fresh = await this.trades.findOne({ where: { id: t.id } });
+          if (!fresh || fresh.status !== 'pending') continue;
+          fresh.status = 'disputed';
+          fresh.disputeReason = 'Venció el tiempo de pago con la operación en curso (escalado automático)';
+          fresh.disputeBy = fresh.sellerUserId;
+          await this.trades.save(fresh);
+          this.logger.log(`Trade ${t.id} escalado a disputa (venció el pago con interacción)`);
+          continue;
+        }
         await this.dataSource.transaction(async (manager) => {
           const repo = manager.getRepository(P2pTradeEntity);
           const fresh = await repo.findOne({ where: { id: t.id } });
@@ -441,6 +528,8 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
       sellerEmail: emails.get(trade.sellerUserId) ?? null,
       paymentMethod: order?.paymentMethod ?? null,
       paymentDetails: order?.paymentDetails ?? null,
+      maxExtensions: MAX_EXTENSIONS,
+      extensionsLeft: Math.max(0, MAX_EXTENSIONS - trade.extensions),
     };
   }
 

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  NotFoundException,
   OnApplicationShutdown,
   OnModuleInit,
   UnauthorizedException,
@@ -15,8 +16,10 @@ import { AuthService } from '../auth/auth.service';
 import { cmpStr, isPositive } from '../common/money.util';
 import { WithdrawalsConfig } from '../config/configuration';
 import { PaymentEntity } from '../database/entities/payment.entity';
+import { WithdrawAddressEntity } from '../database/entities/withdraw-address.entity';
 import { CustodyService } from '../custody/custody.service';
 import { EvmService } from '../evm/evm.service';
+import { FEE_ACCOUNT, FeeService } from '../fees/fee.service';
 import { LedgerService } from '../ledger/ledger.service';
 
 const WITHDRAWABLE_ASSET = 'USDC';
@@ -30,6 +33,10 @@ export interface WithdrawRequest {
   amount: string;
   toAddress: string;
   idempotencyKey: string;
+  /** Red EVM de destino (key del catálogo: sepolia, polygon-amoy, bsc-testnet). */
+  network?: string;
+  /** Si viene, guarda la dirección como favorita con esta etiqueta. */
+  saveLabel?: string;
   /** Código de Google Authenticator (TOTP) que autoriza el retiro. */
   totpCode?: string;
 }
@@ -55,14 +62,65 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
 
   constructor(
     @InjectRepository(PaymentEntity) private readonly payments: Repository<PaymentEntity>,
+    @InjectRepository(WithdrawAddressEntity)
+    private readonly favorites: Repository<WithdrawAddressEntity>,
     private readonly ledger: LedgerService,
     private readonly custody: CustodyService,
     private readonly evm: EvmService,
     private readonly auth: AuthService,
+    private readonly fees: FeeService,
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<WithdrawalsConfig>('withdrawals');
+  }
+
+  // ──────────────────────── Direcciones favoritas (B) ────────────────────────
+
+  /** Lista las direcciones de retiro guardadas del usuario. */
+  listFavorites(userId: string): Promise<WithdrawAddressEntity[]> {
+    return this.favorites.find({ where: { userId }, order: { createdAt: 'DESC' }, take: 50 });
+  }
+
+  /** Guarda una dirección favorita (valida red + address EVM). Idempotente por unique. */
+  async addFavorite(
+    userId: string,
+    input: { label: string; network?: string; address: string; asset?: string },
+  ): Promise<WithdrawAddressEntity> {
+    const label = (input.label ?? '').trim().slice(0, 64);
+    if (!label) throw new BadRequestException('La etiqueta es obligatoria');
+    if (!isAddress(input.address)) {
+      throw new BadRequestException(`Address EVM inválida: ${input.address}`);
+    }
+    const network = this.evm.cfgOf(input.network).key; // valida red
+    const existing = await this.favorites.findOne({
+      where: { userId, network, address: input.address },
+    });
+    if (existing) {
+      if (existing.label !== label) {
+        existing.label = label;
+        await this.favorites.save(existing);
+      }
+      return existing;
+    }
+    const entity = this.favorites.create({
+      id: randomUUID(),
+      userId,
+      label,
+      network,
+      address: input.address,
+      asset: (input.asset ?? 'USDC').toUpperCase().slice(0, 16),
+    });
+    return this.favorites.save(entity);
+  }
+
+  /** Elimina una dirección favorita del usuario. */
+  async removeFavorite(userId: string, id: string): Promise<{ ok: boolean }> {
+    const fav = await this.favorites.findOne({ where: { id } });
+    if (!fav) throw new NotFoundException('Dirección no encontrada');
+    if (fav.userId !== userId) throw new BadRequestException('No es tu dirección');
+    await this.favorites.remove(fav);
+    return { ok: true };
   }
 
   /**
@@ -136,18 +194,35 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
     if (!isAddress(toAddress))
       throw new BadRequestException(`Address de destino inválida: ${toAddress}`);
 
+    // Valida y normaliza la red (lanza si no es una red EVM operativa).
+    const network = this.evm.cfgOf(req.network).key;
+
     const existing = await this.payments.findOne({ where: { userId, idempotencyKey } });
     if (existing) return existing;
 
     // Autorización fuerte (Google Authenticator) ANTES de mover nada.
     await this.assertStepUp(userId, totpCode);
 
+    // Opcional (estilo Meru): guarda la dirección como favorita.
+    if (req.saveLabel?.trim()) {
+      await this.addFavorite(userId, {
+        label: req.saveLabel,
+        network,
+        address: toAddress,
+        asset,
+      }).catch(() => undefined);
+    }
+
     try {
       return await this.dataSource.transaction(async (manager) => {
         const userAcc = await this.ledger.getOrCreateAccount('user', userId, asset, manager);
         const available = await this.ledger.availableOf(userAcc.id, manager);
-        if (cmpStr(available, amount) < 0) {
-          throw new BadRequestException(`Saldo disponible insuficiente (${available} ${asset})`);
+        // Comisión: plataforma + red. El usuario paga monto + comisiones (hold del total).
+        const quote = this.fees.quoteWithdraw(amount);
+        if (cmpStr(available, quote.total) < 0) {
+          throw new BadRequestException(
+            `Saldo insuficiente. Necesitas ${quote.total} ${asset} (incluye comisión ${quote.totalFee})`,
+          );
         }
 
         const repo = manager.getRepository(PaymentEntity);
@@ -162,11 +237,19 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
           fromAccountId: userAcc.id,
           toAccountId: null,
           counterparty: toAddress,
-          metadata: { toAddress, stage: 'pending_broadcast' },
+          metadata: {
+            toAddress,
+            network,
+            stage: 'pending_broadcast',
+            fee: quote.platformFee,
+            networkFee: quote.networkFee,
+            totalFee: quote.totalFee,
+            totalDebit: quote.total,
+          },
         });
         await repo.save(payment);
 
-        const hold = await this.ledger.createHold(manager, userAcc.id, asset, amount, payment.id);
+        const hold = await this.ledger.createHold(manager, userAcc.id, asset, quote.total, payment.id);
         payment.metadata = { ...payment.metadata, holdId: hold.id };
         await repo.save(payment);
         return payment;
@@ -214,11 +297,12 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
     let n = 0;
     for (const p of list) {
       const toAddress = (p.metadata?.toAddress as string) ?? p.counterparty ?? '';
+      const network = (p.metadata?.network as string) ?? undefined;
       // Marca 'broadcasting' para no reemitir si el ciclo se solapa.
       p.metadata = { ...p.metadata, stage: 'broadcasting' };
       await this.payments.save(p);
       try {
-        const txHash = await this.custody.sendUsdc(toAddress, p.amount);
+        const txHash = await this.custody.sendUsdc(toAddress, p.amount, network);
         p.metadata = { ...p.metadata, stage: 'broadcast', txHash };
         await this.payments.save(p);
         this.logger.log(`Retiro ${p.id} emitido: ${txHash}`);
@@ -238,8 +322,16 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
     for (const p of list) {
       const txHash = p.metadata?.txHash as string | undefined;
       if (!txHash) continue;
-      const tx = await this.evm.getTransaction(txHash);
-      if (tx.status === 'success' && tx.confirmations >= this.cfg.confirmations) {
+      const network = (p.metadata?.network as string) ?? undefined;
+      const minConf = (() => {
+        try {
+          return this.evm.cfgOf(network).confirmations;
+        } catch {
+          return this.cfg.confirmations;
+        }
+      })();
+      const tx = await this.evm.getTransaction(txHash, network);
+      if (tx.status === 'success' && tx.confirmations >= minConf) {
         await this.complete(p);
         n++;
       } else if (tx.status === 'reverted') {
@@ -251,7 +343,7 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
     return n;
   }
 
-  /** Confirmado: commit del hold + asiento de salida (debita usuario, acredita custodia). */
+  /** Confirmado: commit del hold + asiento de salida (debita total, acredita custodia + tesorería). */
   private async complete(p: PaymentEntity): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       const userAcc = await this.ledger.getOrCreateAccount('user', p.userId, p.asset, manager);
@@ -261,12 +353,20 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
         p.asset,
         manager,
       );
+      const feeAcc = await this.ledger.getOrCreateAccount('system', FEE_ACCOUNT, p.asset, manager);
+      const totalFee = (p.metadata?.totalFee as string) ?? '0';
+      const totalDebit = (p.metadata?.totalDebit as string) ?? p.amount;
       const holdId = p.metadata?.holdId as string | undefined;
       if (holdId) await this.ledger.setHoldStatus(manager, holdId, 'committed');
-      await this.ledger.postJournal(manager, p.id, [
-        { accountId: userAcc.id, direction: 'debit', amount: p.amount, asset: p.asset },
-        { accountId: custodyAcc.id, direction: 'credit', amount: p.amount, asset: p.asset },
-      ]);
+      // Debita el total al usuario; el monto enviado va a custodia y la comisión a tesorería.
+      const entries = [
+        { accountId: userAcc.id, direction: 'debit' as const, amount: totalDebit, asset: p.asset },
+        { accountId: custodyAcc.id, direction: 'credit' as const, amount: p.amount, asset: p.asset },
+      ];
+      if (isPositive(totalFee)) {
+        entries.push({ accountId: feeAcc.id, direction: 'credit' as const, amount: totalFee, asset: p.asset });
+      }
+      await this.ledger.postJournal(manager, p.id, entries);
       await manager
         .getRepository(PaymentEntity)
         .update(

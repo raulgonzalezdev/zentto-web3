@@ -21,6 +21,12 @@ export class AdminController {
     return this.admin.stats();
   }
 
+  @Get('treasury')
+  @ApiOperation({ summary: 'Cuenta maestra: comisiones ganadas + billetera maestra on-chain' })
+  treasury() {
+    return this.admin.treasury();
+  }
+
   @Get('users')
   @ApiOperation({ summary: 'Todos los usuarios con estado KYC y saldos' })
   users() {

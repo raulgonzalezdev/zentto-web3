@@ -38,6 +38,14 @@ export class CreateP2pOrderDto {
   paymentDetails?: string;
 }
 
+export class ConfirmTradeDto {
+  @ApiPropertyOptional({ example: '123456', description: 'Código Google Authenticator (2FA)' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{6}$/, { message: 'totpCode debe ser de 6 dígitos' })
+  totpCode?: string;
+}
+
 export class OpenDisputeDto {
   @ApiProperty({ example: 'Pagué pero el vendedor no libera el cripto' })
   @IsString()

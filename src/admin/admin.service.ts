@@ -3,9 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { LedgerConfig } from '../config/configuration';
+import { CustodyService } from '../custody/custody.service';
 import { KycVerificationEntity } from '../database/entities/kyc-verification.entity';
 import { PaymentEntity } from '../database/entities/payment.entity';
 import { UserEntity } from '../database/entities/user.entity';
+import { EvmService } from '../evm/evm.service';
+import { FEE_ACCOUNT, FeeService } from '../fees/fee.service';
 import { LedgerService } from '../ledger/ledger.service';
 
 @Injectable()
@@ -18,9 +21,47 @@ export class AdminService {
     private readonly kyc: Repository<KycVerificationEntity>,
     @InjectRepository(PaymentEntity) private readonly payments: Repository<PaymentEntity>,
     private readonly ledger: LedgerService,
+    private readonly custody: CustodyService,
+    private readonly evm: EvmService,
+    private readonly fees: FeeService,
     config: ConfigService,
   ) {
     this.assets = config.getOrThrow<LedgerConfig>('ledger').assets;
+  }
+
+  /**
+   * Cuenta MAESTRA de tesorería: comisiones acumuladas (ingresos de la plataforma)
+   * por asset + dirección del hot wallet maestro y su saldo on-chain real. Es donde
+   * vive el dinero que gana la app por cada operación.
+   */
+  async treasury() {
+    const feeBalances = await Promise.all(
+      this.assets.map(async (asset) => {
+        const b = await this.ledger.balanceFor('system', FEE_ACCOUNT, asset);
+        return { asset, balance: b.balance, available: b.available, held: b.held };
+      }),
+    );
+    const custodyBalances = await Promise.all(
+      this.assets.map(async (asset) => {
+        const b = await this.ledger.balanceFor('system', 'custody', asset);
+        return { asset, balance: b.balance };
+      }),
+    );
+
+    let masterWallet: string | null = null;
+    let onchain: unknown = null;
+    if (this.custody.enabled) {
+      masterWallet = this.custody.hotWalletAddress();
+      onchain = await this.evm.getAddress(masterWallet).catch(() => null);
+    }
+
+    return {
+      rates: this.fees.rates,
+      feeRevenue: feeBalances, // ingresos por comisiones (lo que ganamos)
+      custody: custodyBalances, // respaldo on-chain de los saldos de usuarios
+      masterWallet, // billetera maestra (hot wallet de tesorería)
+      onchain, // saldo real on-chain de la billetera maestra
+    };
   }
 
   private async emailMap(userIds: string[]): Promise<Map<string, string>> {
