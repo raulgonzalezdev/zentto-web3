@@ -9,6 +9,8 @@ import { DepositAddressEntity } from './entities/deposit-address.entity';
 import { HoldEntity } from './entities/hold.entity';
 import { KycVerificationEntity } from './entities/kyc-verification.entity';
 import { LedgerAccountEntity } from './entities/ledger-account.entity';
+import { P2pOrderEntity } from './entities/p2p-order.entity';
+import { P2pTradeEntity } from './entities/p2p-trade.entity';
 import { LedgerEntryEntity } from './entities/ledger-entry.entity';
 import { PaymentEntity } from './entities/payment.entity';
 import { TransactionEntity } from './entities/transaction.entity';
@@ -40,6 +42,8 @@ import { UserEntity } from './entities/user.entity';
             ChainCursorEntity,
             ChainDepositEntity,
             KycVerificationEntity,
+            P2pOrderEntity,
+            P2pTradeEntity,
           ],
           synchronize: db.synchronize,
           logging: db.logging,
