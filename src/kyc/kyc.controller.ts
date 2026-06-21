@@ -59,6 +59,7 @@ export class KycController {
     @UploadedFiles()
     files: { front_image?: MulterFile[]; back_image?: MulterFile[]; selfie?: MulterFile[] },
     @Body('fullName') fullName?: string,
+    @Body('documentType') documentType?: string,
   ) {
     return this.kyc.verifyWithDocuments(
       user.sub,
@@ -68,6 +69,47 @@ export class KycController {
         selfie: first(files?.selfie),
       },
       fullName,
+      documentType,
+    );
+  }
+
+  // ─────────── Handoff desktop → móvil (QR) ───────────
+
+  @Post('handoff/start')
+  @ApiOperation({ summary: 'Emite un token para continuar la verificación en el móvil (QR)' })
+  startHandoff(@CurrentUser() user: AuthUser) {
+    return this.kyc.startHandoff(user.sub);
+  }
+
+  // Público: el móvil abre el enlace del QR (sin login) y sube las imágenes.
+  // La autorización va en el token de handoff, no en cookies.
+  @Public()
+  @Post('handoff/verify')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Sube documento + selfie desde el móvil usando el token del QR' })
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'front_image', maxCount: 1 },
+      { name: 'back_image', maxCount: 1 },
+      { name: 'selfie', maxCount: 1 },
+    ]),
+  )
+  verifyHandoff(
+    @UploadedFiles()
+    files: { front_image?: MulterFile[]; back_image?: MulterFile[]; selfie?: MulterFile[] },
+    @Body('token') token: string,
+    @Body('fullName') fullName?: string,
+    @Body('documentType') documentType?: string,
+  ) {
+    return this.kyc.verifyHandoff(
+      token,
+      {
+        front: first(files?.front_image),
+        back: first(files?.back_image),
+        selfie: first(files?.selfie),
+      },
+      fullName,
+      documentType,
     );
   }
 

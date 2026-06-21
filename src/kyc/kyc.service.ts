@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { Repository } from 'typeorm';
@@ -42,6 +43,7 @@ export class KycService {
   private readonly logger = new Logger(KycService.name);
   private readonly provider: KycProvider;
   private readonly cfg: KycConfig;
+  private readonly handoffSecret: string;
 
   constructor(
     @InjectRepository(KycVerificationEntity)
@@ -50,9 +52,11 @@ export class KycService {
     private readonly aml: AmlScreeningService,
     private readonly diditApi: DiditApiService,
     private readonly zenttoApi: ZenttoKycApiService,
+    private readonly jwt: JwtService,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<KycConfig>('kyc');
+    this.handoffSecret = config.get<string>('auth.jwtSecret') ?? '';
     const didit = new DiditProvider({
       apiKey: this.cfg.diditApiKey,
       baseUrl: this.cfg.diditBaseUrl,
@@ -200,16 +204,56 @@ export class KycService {
    * las imágenes y Didit resuelve la parte adversarial de forma SÍNCRONA.
    * Combina id-verification + liveness + face-match (Didit) con OFAC (nuestro).
    */
+  // ─────────── Handoff desktop → móvil (QR) ───────────
+  // El desktop pide un token corto; muestra un QR con `${origin}/verificar?t=token`.
+  // El teléfono abre esa URL, captura documento + selfie con su cámara y sube a
+  // `/kyc/handoff/verify` (público, sin login). El desktop hace polling de /kyc/status.
+
+  /** Emite un token de handoff (JWT corto) para que el usuario continúe en su móvil. */
+  async startHandoff(userId: string): Promise<{ token: string; expiresInSec: number }> {
+    const existing = await this.repo.findOne({ where: { userId } });
+    if (existing && existing.status === 'approved') {
+      throw new BadRequestException('Tu identidad ya está verificada');
+    }
+    const expiresInSec = 900; // 15 min
+    const token = await this.jwt.signAsync(
+      { sub: userId, typ: 'kyc_handoff' },
+      { secret: this.handoffSecret, expiresIn: expiresInSec },
+    );
+    return { token, expiresInSec };
+  }
+
+  /** Verifica un token de handoff y procesa las imágenes subidas desde el móvil. */
+  async verifyHandoff(
+    token: string,
+    files: { front?: UploadFile; back?: UploadFile; selfie?: UploadFile },
+    fullNameInput?: string,
+    documentType?: string,
+  ): Promise<KycStatusView> {
+    let userId: string;
+    try {
+      const payload = await this.jwt.verifyAsync<{ sub: string; typ?: string }>(token, {
+        secret: this.handoffSecret,
+      });
+      if (payload.typ !== 'kyc_handoff' || !payload.sub) throw new Error('typ inválido');
+      userId = payload.sub;
+    } catch {
+      throw new UnauthorizedException('Enlace de verificación inválido o expirado');
+    }
+    return this.verifyWithDocuments(userId, files, fullNameInput, documentType);
+  }
+
   async verifyWithDocuments(
     userId: string,
     files: { front?: UploadFile; back?: UploadFile; selfie?: UploadFile },
     fullNameInput?: string,
+    documentType?: string,
   ): Promise<KycStatusView> {
     if (!files.front) throw new BadRequestException('front_image es obligatoria');
     // NATIVO: si el proveedor es zentto-kyc, procesa con nuestro servicio propio
     // (la app sube las imágenes; nada de frontend hospedado).
     if (this.cfg.provider === 'zentto-kyc' && this.zenttoApi.enabled) {
-      return this.verifyWithZenttoKyc(userId, files, fullNameInput);
+      return this.verifyWithZenttoKyc(userId, files, fullNameInput, documentType);
     }
     if (!this.diditApi.enabled) {
       throw new BadRequestException(
@@ -227,7 +271,7 @@ export class KycService {
     const entity =
       existing ?? this.repo.create({ id: randomUUID(), userId, status: 'not_started' });
     try {
-      const id = await this.diditApi.idVerification(files.front, files.back, userId);
+      const id = await this.diditApi.idVerification(files.front, files.back, userId, documentType);
       let liveOk = true;
       let faceOk = true;
       let declinedBiometrics = false;
@@ -289,6 +333,7 @@ export class KycService {
     userId: string,
     files: { front?: UploadFile; back?: UploadFile; selfie?: UploadFile },
     fullNameInput?: string,
+    documentType?: string,
   ): Promise<KycStatusView> {
     const existing = await this.repo.findOne({ where: { userId } });
     if (existing && existing.status === 'approved') {
@@ -298,7 +343,7 @@ export class KycService {
       existing ?? this.repo.create({ id: randomUUID(), userId, status: 'not_started' });
     try {
       const sessionId = await this.zenttoApi.createSession(userId);
-      await this.zenttoApi.idVerification(sessionId, files.front!, files.back);
+      await this.zenttoApi.idVerification(sessionId, files.front!, files.back, documentType);
       if (files.selfie) {
         await this.zenttoApi.liveness(sessionId, files.selfie);
         await this.zenttoApi.faceMatch(sessionId, files.selfie, files.front!);

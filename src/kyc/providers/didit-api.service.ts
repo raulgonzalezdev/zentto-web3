@@ -93,11 +93,13 @@ export class DiditApiService {
     front: UploadFile,
     back?: UploadFile,
     vendorData?: string,
+    documentType?: string,
   ): Promise<IdVerificationResult> {
     const form = new FormData();
     form.append('front_image', this.blob(front), front.originalname);
     if (back) form.append('back_image', this.blob(back), back.originalname);
     if (vendorData) form.append('vendor_data', vendorData);
+    if (documentType) form.append('document_type', documentType);
     const r = await this.postForm<{ id_verification?: IdVerificationResult }>(
       '/v3/id-verification/',
       form,
