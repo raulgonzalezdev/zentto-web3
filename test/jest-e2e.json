@@ -6,5 +6,9 @@
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
+  "moduleNameMapper": {
+    "^tronweb$": "<rootDir>/mocks/tronweb.ts",
+    "^@stellar/stellar-sdk$": "<rootDir>/mocks/stellar-sdk.ts"
+  },
   "testTimeout": 60000
 }
