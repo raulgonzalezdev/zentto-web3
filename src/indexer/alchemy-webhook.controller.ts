@@ -92,7 +92,11 @@ export class AlchemyWebhookController {
 
   /** Verifica la firma HMAC-SHA256 del body crudo (header x-alchemy-signature). */
   private verifySignature(req: RawBodyRequest<Request>): void {
-    if (!this.signingKey) return; // sin key configurada → no se valida (dev)
+    // Seguro por defecto: sin signing key configurada NO se acreditan webhooks
+    // (cualquiera podría falsificar depósitos). El indexer por polling cubre igual.
+    if (!this.signingKey) {
+      throw new UnauthorizedException('Webhook sin signing key configurada');
+    }
     const sig = (req.headers['x-alchemy-signature'] as string) ?? '';
     const raw = req.rawBody ?? Buffer.from('');
     const expected = createHmac('sha256', this.signingKey).update(raw).digest('hex');
