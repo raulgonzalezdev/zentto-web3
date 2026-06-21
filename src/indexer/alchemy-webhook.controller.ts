@@ -25,7 +25,14 @@ interface AddressActivity {
   category?: string;
   hash?: string;
   rawContract?: { rawValue?: string; address?: string; decimals?: number };
-  log?: { index?: number; logIndex?: number };
+  log?: { index?: number; logIndex?: number | string };
+}
+
+/** logIndex puede venir como número o como hex string ("0x6e"). */
+function toLogIndex(log?: { index?: number; logIndex?: number | string }): number {
+  const v = log?.logIndex ?? log?.index ?? 0;
+  if (typeof v === 'string') return v.startsWith('0x') ? parseInt(v, 16) : parseInt(v, 10) || 0;
+  return v;
 }
 
 /**
@@ -70,7 +77,7 @@ export class AlchemyWebhookController {
           toAddress: a.toAddress,
           valueRaw: rawValue.startsWith('0x') ? BigInt(rawValue).toString() : rawValue,
           txHash: a.hash,
-          logIndex: a.log?.index ?? a.log?.logIndex ?? 0,
+          logIndex: toLogIndex(a.log),
           decimals: a.rawContract?.decimals ?? 6,
         })
         .catch((err) => {

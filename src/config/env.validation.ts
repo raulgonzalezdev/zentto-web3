@@ -83,6 +83,9 @@ export const envValidationSchema = Joi.object({
   ALCHEMY_API_KEY: Joi.string().allow('').default(''),
   // Signing key del webhook de Alchemy (valida la firma HMAC del payload entrante).
   ALCHEMY_WEBHOOK_SIGNING_KEY: Joi.string().allow('').default(''),
+  // Notify API: auto-registra direcciones de depósito en el webhook Address Activity.
+  ALCHEMY_AUTH_TOKEN: Joi.string().allow('').default(''),
+  ALCHEMY_WEBHOOK_ID: Joi.string().allow('').default(''),
   // Override directo del RPC; tiene prioridad sobre ALCHEMY_API_KEY.
   EVM_RPC_URL: Joi.string().allow('').optional(),
   EVM_CHAIN_ID: Joi.number().default(11155111),

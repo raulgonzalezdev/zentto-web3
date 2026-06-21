@@ -15,6 +15,7 @@ import {
 import { mnemonicToAccount } from 'viem/accounts';
 import { CustodyConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
 import { DepositAddressEntity } from '../database/entities/deposit-address.entity';
+import { AlchemyNotifyService } from './alchemy-notify.service';
 import { StellarService } from './stellar.service';
 import { TronService } from './tron.service';
 
@@ -64,6 +65,7 @@ export class CustodyService implements OnModuleInit {
     private readonly deposits: Repository<DepositAddressEntity>,
     private readonly tron: TronService,
     private readonly stellar: StellarService,
+    private readonly notify: AlchemyNotifyService,
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
@@ -173,7 +175,10 @@ export class CustodyService implements OnModuleInit {
             address: this.deriveEvm(index),
             derivationIndex: index,
           });
-          return repo.save(entity);
+          const saved = await repo.save(entity);
+          // Registra la dirección en el webhook de Alchemy (best-effort, no bloquea).
+          void this.notify.watchAddress(saved.address);
+          return saved;
         });
       } catch (e) {
         const code =
