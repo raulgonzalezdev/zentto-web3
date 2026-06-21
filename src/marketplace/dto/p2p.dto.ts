@@ -28,3 +28,29 @@ export class CreateP2pOrderDto {
   @MaxLength(64)
   paymentMethod?: string;
 }
+
+export class OpenDisputeDto {
+  @ApiProperty({ example: 'Pagué pero el vendedor no libera el cripto' })
+  @IsString()
+  @MaxLength(1000)
+  reason!: string;
+}
+
+export class ResolveDisputeDto {
+  @ApiProperty({ enum: ['release', 'refund'], description: 'release→comprador, refund→vendedor' })
+  @IsIn(['release', 'refund'])
+  decision!: 'release' | 'refund';
+}
+
+export class PostP2pMessageDto {
+  @ApiPropertyOptional({ example: 'Te envié el comprobante adjunto' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  body?: string;
+
+  @ApiPropertyOptional({ description: 'Evidencia de pago como data URL (image/png|jpeg|webp)' })
+  @IsOptional()
+  @IsString()
+  attachment?: string;
+}

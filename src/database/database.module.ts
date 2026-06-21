@@ -10,6 +10,7 @@ import { DepositAddressEntity } from './entities/deposit-address.entity';
 import { HoldEntity } from './entities/hold.entity';
 import { KycVerificationEntity } from './entities/kyc-verification.entity';
 import { LedgerAccountEntity } from './entities/ledger-account.entity';
+import { P2pMessageEntity } from './entities/p2p-message.entity';
 import { P2pOrderEntity } from './entities/p2p-order.entity';
 import { P2pTradeEntity } from './entities/p2p-trade.entity';
 import { PaymentMethodEntity } from './entities/payment-method.entity';
@@ -46,6 +47,7 @@ import { UserEntity } from './entities/user.entity';
             KycVerificationEntity,
             P2pOrderEntity,
             P2pTradeEntity,
+            P2pMessageEntity,
             PaymentMethodEntity,
             AccountTokenEntity,
           ],
