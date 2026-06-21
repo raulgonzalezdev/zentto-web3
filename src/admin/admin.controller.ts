@@ -33,6 +33,12 @@ export class AdminController {
     return this.admin.listUsers();
   }
 
+  @Get('operators')
+  @ApiOperation({ summary: 'Operadores (operator/admin) con su volumen de recargas completadas' })
+  operators() {
+    return this.admin.listOperators();
+  }
+
   @Get('kyc')
   @ApiOperation({ summary: 'TODAS las verificaciones KYC (filtro ?status=)' })
   kyc(@Query('status') status?: string) {

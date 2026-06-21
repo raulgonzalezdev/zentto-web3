@@ -246,35 +246,39 @@ function buildNetworks(): NetworkConfig[] {
     available: true,
   };
 
-  // No-EVM: declaradas para la UI, aún no operativas (requieren SDK propio).
+  // Tron Nile testnet (USDT-TRC20: el rail de stablecoin más usado en Venezuela).
   const tron: NetworkConfig = {
     key: 'tron-nile',
     family: 'tron',
     chainId: 0,
     name: 'Tron Nile',
-    rpcUrl: '',
+    rpcUrl: process.env.TRON_RPC_URL || 'https://nile.trongrid.io',
     explorerUrl: 'https://nile.tronscan.org',
     nativeSymbol: 'TRX',
-    usdcAddress: '',
+    // USDT TRC-20 en Nile testnet.
+    usdcAddress: process.env.TRON_USDT_ADDRESS || 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf',
     confirmations: 19,
     isTestnet: true,
-    enabled: false,
-    available: false,
+    enabled: extrasEnabled,
+    available: true,
   };
 
+  // Stellar testnet (USDC de Circle; depósito por cuenta-plataforma + memo por usuario).
   const stellar: NetworkConfig = {
     key: 'stellar-testnet',
     family: 'stellar',
     chainId: 0,
     name: 'Stellar Testnet',
-    rpcUrl: '',
+    rpcUrl: process.env.STELLAR_HORIZON_URL || 'https://horizon-testnet.stellar.org',
     explorerUrl: 'https://stellar.expert/explorer/testnet',
     nativeSymbol: 'XLM',
-    usdcAddress: '',
+    // Issuer de USDC de Circle en testnet (asset code USDC).
+    usdcAddress:
+      process.env.STELLAR_USDC_ISSUER || 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
     confirmations: 1,
     isTestnet: true,
-    enabled: false,
-    available: false,
+    enabled: extrasEnabled,
+    available: true,
   };
 
   return [primary, polygonAmoy, bscTestnet, tron, stellar];

@@ -7,6 +7,8 @@ import { Chain, createWalletClient, defineChain, http, parseUnits, WalletClient 
 import { mnemonicToAccount } from 'viem/accounts';
 import { CustodyConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
 import { DepositAddressEntity } from '../database/entities/deposit-address.entity';
+import { StellarService } from './stellar.service';
+import { TronService } from './tron.service';
 
 // Dirección de depósito compartida por TODA la familia EVM (misma clave HD → misma
 // address en Sepolia/Polygon/BSC). Por eso se almacena bajo una clave canónica.
@@ -45,16 +47,21 @@ export class CustodyService implements OnModuleInit {
   private readonly custody: CustodyConfig;
   /** Redes EVM operativas, por clave (chain viem + metadatos). */
   private readonly evmNets = new Map<string, { cfg: NetworkConfig; chain: Chain }>();
+  /** Todas las redes habilitadas por clave (para resolver familia: evm/tron/stellar). */
+  private readonly netByKey = new Map<string, NetworkConfig>();
   private readonly primaryKey: string;
 
   constructor(
     @InjectRepository(DepositAddressEntity)
     private readonly deposits: Repository<DepositAddressEntity>,
+    private readonly tron: TronService,
+    private readonly stellar: StellarService,
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
     this.custody = config.getOrThrow<CustodyConfig>('custody');
     const list = config.getOrThrow<NetworksConfig>('networks').list;
+    for (const n of list) if (n.enabled) this.netByKey.set(n.key, n);
     const evmNets = list.filter((n) => n.family === 'evm' && n.enabled);
     for (const cfg of evmNets) {
       const chain = defineChain({
@@ -172,19 +179,98 @@ export class CustodyService implements OnModuleInit {
     throw new ServiceUnavailableException('No se pudo asignar dirección de depósito');
   }
 
+  /** Asigna (o devuelve) un registro de depósito para una familia no-EVM. */
+  private async getOrCreateAddress(
+    userId: string,
+    network: string,
+    derive: (index: number) => string,
+  ): Promise<DepositAddressEntity> {
+    const existing = await this.deposits.findOne({ where: { userId, network } });
+    if (existing) return existing;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        return await this.dataSource.transaction(async (manager) => {
+          const repo = manager.getRepository(DepositAddressEntity);
+          const index = await repo.count({ where: { network } });
+          return repo.save(
+            repo.create({
+              id: randomUUID(),
+              userId,
+              network,
+              address: derive(index),
+              derivationIndex: index,
+            }),
+          );
+        });
+      } catch (e) {
+        const code =
+          (e as { code?: string; driverError?: { code?: string } })?.code ??
+          (e as { driverError?: { code?: string } })?.driverError?.code;
+        if (code === '23505') {
+          const again = await this.deposits.findOne({ where: { userId, network } });
+          if (again) return again;
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new ServiceUnavailableException('No se pudo asignar dirección de depósito');
+  }
+
+  /** Info de depósito por red — rutea por familia (EVM compartida / Tron / Stellar+memo). */
   async depositInfo(userId: string, networkKey?: string) {
-    const { cfg } = this.evmNet(networkKey);
+    if (!this.enabled) {
+      throw new ServiceUnavailableException('Custodia no configurada (CUSTODY_MNEMONIC ausente)');
+    }
+    const cfg = networkKey ? this.netByKey.get(networkKey) : this.evmNet().cfg;
+    if (!cfg) throw new ServiceUnavailableException(`Red no soportada: ${networkKey}`);
+
+    if (cfg.family === 'tron') {
+      const dep = await this.getOrCreateAddress(userId, 'tron', (i) => this.tron.deriveAddress(i));
+      return {
+        network: cfg.key,
+        chainName: cfg.name,
+        nativeSymbol: cfg.nativeSymbol,
+        address: dep.address,
+        asset: 'USDT',
+        token: cfg.usdcAddress,
+        explorerUrl: `${cfg.explorerUrl}/address/${dep.address}`,
+        note: `Envía USDT (TRC-20) en ${cfg.name} a esta dirección. El indexer lo detecta y acredita tu saldo.`,
+      };
+    }
+
+    if (cfg.family === 'stellar') {
+      // Cuenta plataforma compartida + memo por usuario (índice HD como memo).
+      const dep = await this.getOrCreateAddress(userId, 'stellar', () =>
+        this.stellar.platformAddress(),
+      );
+      const { address, memo } = this.stellar.depositInfo(dep.derivationIndex);
+      return {
+        network: cfg.key,
+        chainName: cfg.name,
+        nativeSymbol: cfg.nativeSymbol,
+        address,
+        memo, // OBLIGATORIO: sin el memo el depósito no se puede enrutar
+        asset: 'USDC',
+        token: cfg.usdcAddress,
+        explorerUrl: `${cfg.explorerUrl}/account/${address}`,
+        note: `Envía USDC en ${cfg.name} a esta dirección INCLUYENDO el memo ${memo}. Sin el memo no podremos acreditar tu depósito.`,
+      };
+    }
+
+    // EVM (familia): dirección compartida entre todas las redes EVM.
+    const { cfg: evmCfg } = this.evmNet(networkKey);
     const dep = await this.getOrCreateEvmDepositAddress(userId);
     return {
-      network: cfg.key,
-      chainName: cfg.name,
-      chainId: cfg.chainId,
-      nativeSymbol: cfg.nativeSymbol,
-      address: dep.address, // misma address para toda la familia EVM
+      network: evmCfg.key,
+      chainName: evmCfg.name,
+      chainId: evmCfg.chainId,
+      nativeSymbol: evmCfg.nativeSymbol,
+      address: dep.address,
       asset: 'USDC',
-      token: cfg.usdcAddress,
-      explorerUrl: `${cfg.explorerUrl}/address/${dep.address}`,
-      note: `Envía USDC en ${cfg.name} a esta dirección. El indexer detecta el depósito y acredita tu saldo. La misma dirección sirve para todas las redes EVM.`,
+      token: evmCfg.usdcAddress,
+      explorerUrl: `${evmCfg.explorerUrl}/address/${dep.address}`,
+      note: `Envía USDC en ${evmCfg.name} a esta dirección. La misma dirección sirve para todas las redes EVM.`,
     };
   }
 }
