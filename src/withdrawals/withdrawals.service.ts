@@ -22,7 +22,8 @@ import { EvmService } from '../evm/evm.service';
 import { FEE_ACCOUNT, FeeService } from '../fees/fee.service';
 import { LedgerService } from '../ledger/ledger.service';
 
-const WITHDRAWABLE_ASSET = 'USDC';
+// Assets retirables on-chain (los mismos del ledger). USDT es el rail de Binance.
+const WITHDRAWABLE_ASSETS = new Set(['USDT', 'USDC']);
 const SYSTEM_CUSTODY = 'custody';
 /** Ventana de enfriamiento tras un cambio de contraseña antes de permitir retiros. */
 const PASSWORD_CHANGE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -185,9 +186,10 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
   /** Crea un retiro: valida, coloca el hold y lo deja en `processing` (broadcast async). */
   async request(req: WithdrawRequest): Promise<PaymentEntity> {
     const { userId, asset, amount, toAddress, idempotencyKey, totpCode } = req;
-    if (asset !== WITHDRAWABLE_ASSET) {
+    const assetUp = (asset || '').toUpperCase();
+    if (!WITHDRAWABLE_ASSETS.has(assetUp)) {
       throw new BadRequestException(
-        `Solo se puede retirar ${WITHDRAWABLE_ASSET} on-chain por ahora`,
+        `Solo se puede retirar ${[...WITHDRAWABLE_ASSETS].join(' o ')} on-chain`,
       );
     }
     if (!isPositive(amount)) throw new BadRequestException('El monto debe ser > 0');
@@ -308,7 +310,7 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
       p.metadata = { ...p.metadata, stage: 'broadcasting' };
       await this.payments.save(p);
       try {
-        const txHash = await this.custody.sendUsdc(toAddress, p.amount, network);
+        const txHash = await this.custody.sendToken(toAddress, p.amount, p.asset, network);
         p.metadata = { ...p.metadata, stage: 'broadcast', txHash };
         await this.payments.save(p);
         this.logger.log(`Retiro ${p.id} emitido: ${txHash}`);

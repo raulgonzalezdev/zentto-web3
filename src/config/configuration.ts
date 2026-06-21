@@ -162,8 +162,8 @@ export interface NetworkConfig {
   usdcAddress: string;
   /** Símbolo del asset principal de la red (compat). */
   asset: string;
-  /** Stablecoins a indexar en esta red (USDT + USDC). Decimales se leen on-chain. */
-  tokens: { address: string; asset: string }[];
+  /** Stablecoins a indexar/retirar en esta red (USDT + USDC) con sus decimales. */
+  tokens: { address: string; asset: string; decimals: number }[];
   confirmations: number;
   isTestnet: boolean;
   /** El indexer escanea y los retiros operan en esta red. */
@@ -230,8 +230,8 @@ function buildNetworks(): NetworkConfig[] {
     usdcAddress: '0xa0b86991C6218B266C64bb69aA14f0094C9B0eE9',
     asset: 'USDC',
     tokens: [
-      { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', asset: 'USDT' },
-      { address: '0xa0b86991C6218B266C64bb69aA14f0094C9B0eE9', asset: 'USDC' },
+      { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', asset: 'USDT', decimals: 6 },
+      { address: '0xa0b86991C6218B266C64bb69aA14f0094C9B0eE9', asset: 'USDC', decimals: 6 },
     ],
     confirmations: parseInt(process.env.ETH_MAINNET_CONFIRMATIONS ?? '12', 10),
     isTestnet: false,
@@ -252,8 +252,8 @@ function buildNetworks(): NetworkConfig[] {
     usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
     asset: 'USDC',
     tokens: [
-      { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', asset: 'USDT' },
-      { address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', asset: 'USDC' },
+      { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', asset: 'USDT', decimals: 6 },
+      { address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', asset: 'USDC', decimals: 6 },
     ],
     confirmations: parseInt(process.env.POLYGON_MAINNET_CONFIRMATIONS ?? '30', 10),
     isTestnet: false,
@@ -274,8 +274,8 @@ function buildNetworks(): NetworkConfig[] {
     usdcAddress: '0x55d398326f99059fF775485246999027B3197955',
     asset: 'USDT',
     tokens: [
-      { address: '0x55d398326f99059fF775485246999027B3197955', asset: 'USDT' }, // 18 dec
-      { address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', asset: 'USDC' }, // 18 dec
+      { address: '0x55d398326f99059fF775485246999027B3197955', asset: 'USDT', decimals: 18 },
+      { address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', asset: 'USDC', decimals: 18 },
     ],
     confirmations: parseInt(process.env.BSC_MAINNET_CONFIRMATIONS ?? '6', 10),
     isTestnet: false,
@@ -295,7 +295,7 @@ function buildNetworks(): NetworkConfig[] {
     nativeSymbol: 'TRX',
     usdcAddress: process.env.TRON_USDT_ADDRESS || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
     asset: 'USDT',
-    tokens: [{ address: process.env.TRON_USDT_ADDRESS || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', asset: 'USDT' }],
+    tokens: [{ address: process.env.TRON_USDT_ADDRESS || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', asset: 'USDT', decimals: 6 }],
     confirmations: 19,
     isTestnet: false,
     // Tron ya tiene indexer de depósitos (USDT-TRC20). Se activa con TRON_ENABLED=true.
@@ -315,7 +315,7 @@ function buildNetworks(): NetworkConfig[] {
     usdcAddress: process.env.STELLAR_USDC_ISSUER || 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
     asset: 'USDC',
     tokens: [
-      { address: process.env.STELLAR_USDC_ISSUER || 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN', asset: 'USDC' },
+      { address: process.env.STELLAR_USDC_ISSUER || 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN', asset: 'USDC', decimals: 7 },
     ],
     confirmations: 1,
     isTestnet: false,
@@ -337,8 +337,8 @@ function buildNetworks(): NetworkConfig[] {
     usdcAddress: process.env.SOLANA_USDC_MINT || 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
     asset: 'USDC',
     tokens: [
-      { address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', asset: 'USDC' },
-      { address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', asset: 'USDT' },
+      { address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', asset: 'USDC', decimals: 6 },
+      { address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', asset: 'USDT', decimals: 6 },
     ],
     confirmations: 1,
     isTestnet: false,
@@ -362,7 +362,7 @@ function buildNetworks(): NetworkConfig[] {
       nativeSymbol: 'ETH',
       usdcAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
       asset: 'USDC',
-      tokens: [{ address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', asset: 'USDC' }],
+      tokens: [{ address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', asset: 'USDC', decimals: 6 }],
       confirmations: 3,
       isTestnet: true,
       enabled: true,
