@@ -4,6 +4,7 @@ import {
   Chain,
   createPublicClient,
   defineChain,
+  fallback,
   formatEther,
   formatUnits,
   http,
@@ -76,7 +77,11 @@ export class EvmService implements OnModuleInit {
         rpcUrls: { default: { http: [cfg.rpcUrl] } },
         blockExplorers: { default: { name: 'Explorer', url: cfg.explorerUrl } },
       });
-      const client = createPublicClient({ chain, transport: http(cfg.rpcUrl) });
+      // Failover: si hay RPC de respaldo, viem reintenta en él cuando el primario falla.
+      const transport = cfg.fallbackRpcUrl
+        ? fallback([http(cfg.rpcUrl), http(cfg.fallbackRpcUrl)])
+        : http(cfg.rpcUrl);
+      const client = createPublicClient({ chain, transport });
       this.nets.set(cfg.key, { cfg, chain, client });
     }
     this.primaryKey = evmNets[0]?.key ?? 'sepolia';

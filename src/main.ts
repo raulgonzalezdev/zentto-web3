@@ -8,7 +8,9 @@ import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: false });
+  // rawBody: necesario para verificar la firma HMAC de los webhooks de Alchemy
+  // (la firma se calcula sobre los bytes crudos del body).
+  const app = await NestFactory.create(AppModule, { bufferLogs: false, rawBody: true });
   const config = app.get(ConfigService);
   const appCfg = config.getOrThrow<AppConfig>('app');
   const logger = new Logger('Bootstrap');

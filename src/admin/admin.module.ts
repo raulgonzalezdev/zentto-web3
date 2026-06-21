@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { KycVerificationEntity } from '../database/entities/kyc-verification.entity';
 import { PaymentEntity } from '../database/entities/payment.entity';
+import { RechargeRequestEntity } from '../database/entities/recharge-request.entity';
 import { UserEntity } from '../database/entities/user.entity';
 import { CustodyModule } from '../custody/custody.module';
 import { EvmModule } from '../evm/evm.module';
@@ -14,7 +15,12 @@ import { OperatorGuard } from './operator.guard';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([UserEntity, KycVerificationEntity, PaymentEntity]),
+    TypeOrmModule.forFeature([
+      UserEntity,
+      KycVerificationEntity,
+      PaymentEntity,
+      RechargeRequestEntity,
+    ]),
     LedgerModule,
     P2pMarketModule,
     CustodyModule,

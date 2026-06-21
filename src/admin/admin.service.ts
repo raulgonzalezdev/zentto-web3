@@ -2,10 +2,12 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { addStr } from '../common/money.util';
 import { LedgerConfig } from '../config/configuration';
 import { CustodyService } from '../custody/custody.service';
 import { KycVerificationEntity } from '../database/entities/kyc-verification.entity';
 import { PaymentEntity } from '../database/entities/payment.entity';
+import { RechargeRequestEntity } from '../database/entities/recharge-request.entity';
 import { UserEntity } from '../database/entities/user.entity';
 import { EvmService } from '../evm/evm.service';
 import { FEE_ACCOUNT, FeeService } from '../fees/fee.service';
@@ -20,6 +22,8 @@ export class AdminService {
     @InjectRepository(KycVerificationEntity)
     private readonly kyc: Repository<KycVerificationEntity>,
     @InjectRepository(PaymentEntity) private readonly payments: Repository<PaymentEntity>,
+    @InjectRepository(RechargeRequestEntity)
+    private readonly recharges: Repository<RechargeRequestEntity>,
     private readonly ledger: LedgerService,
     private readonly custody: CustodyService,
     private readonly evm: EvmService,
@@ -151,6 +155,41 @@ export class AdminService {
     user.role = role;
     await this.users.save(user);
     return { id: user.id, email: user.email, role: user.role };
+  }
+
+  /**
+   * Operadores del backoffice (rol operator/admin) con su volumen de recargas
+   * COMPLETADAS: número de solicitudes atendidas y suma del cripto acreditado.
+   */
+  async listOperators() {
+    const operators = await this.users.find({
+      where: { role: In(['operator', 'admin']) },
+      order: { createdAt: 'DESC' },
+      take: 200,
+    });
+    const completed = await this.recharges.find({
+      where: { status: 'completed', operatorUserId: In(operators.map((o) => o.id)) },
+      select: ['operatorUserId', 'amount', 'asset'],
+    });
+    const volByOperator = new Map<string, { count: number; volume: string }>();
+    for (const r of completed) {
+      if (!r.operatorUserId) continue;
+      const cur = volByOperator.get(r.operatorUserId) ?? { count: 0, volume: '0' };
+      cur.count += 1;
+      cur.volume = addStr(cur.volume, r.amount);
+      volByOperator.set(r.operatorUserId, cur);
+    }
+    return operators.map((o) => {
+      const v = volByOperator.get(o.id) ?? { count: 0, volume: '0' };
+      return {
+        id: o.id,
+        email: o.email,
+        displayName: o.displayName,
+        role: o.role,
+        recharges: { completed: v.count, volume: v.volume },
+        createdAt: o.createdAt,
+      };
+    });
   }
 
   /** Métricas del panel de operaciones. */

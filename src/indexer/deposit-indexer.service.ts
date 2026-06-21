@@ -69,6 +69,44 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     return this.chainDeposits.find({ where: { userId }, order: { createdAt: 'DESC' }, take: 100 });
   }
 
+  /**
+   * Acredita una transferencia entrante notificada por un webhook (Alchemy). Busca
+   * la dirección de depósito del usuario, calcula el monto y reusa el crédito
+   * idempotente del indexer. Devuelve true si se acreditó (false si ya estaba o no
+   * corresponde a ninguna dirección nuestra).
+   */
+  async creditWebhookTransfer(input: {
+    network: string;
+    tokenAddress: string;
+    toAddress: string;
+    valueRaw: string;
+    txHash: string;
+    logIndex: number;
+    decimals?: number;
+    blockNumber?: string;
+  }): Promise<boolean> {
+    const row = await this.deposits
+      .createQueryBuilder('d')
+      .where('LOWER(d.address) = LOWER(:a)', { a: input.toAddress })
+      .andWhere('d.network = :n', { n: NETWORK_EVM })
+      .getOne();
+    if (!row) return false; // no es una de nuestras direcciones de depósito
+    const value = BigInt(input.valueRaw);
+    const amount = formatUnits(value, input.decimals ?? 6);
+    return this.creditDeposit(
+      input.network,
+      input.tokenAddress,
+      row.userId,
+      {
+        txHash: input.txHash,
+        logIndex: input.logIndex,
+        value,
+        blockNumber: BigInt(input.blockNumber ?? '0'),
+      },
+      amount,
+    );
+  }
+
   /** Un ciclo de escaneo: recorre TODAS las redes EVM habilitadas. */
   async scan(): Promise<ScanResult> {
     if (this.scanning) return { fromBlock: '0', toBlock: '0', found: 0, credited: 0 };

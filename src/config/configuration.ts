@@ -147,6 +147,8 @@ export interface NetworkConfig {
   chainId: number;
   name: string;
   rpcUrl: string;
+  /** RPC público de respaldo (failover) si el primario (Alchemy) falla. */
+  fallbackRpcUrl?: string;
   explorerUrl: string;
   nativeSymbol: string;
   usdcAddress: string;
@@ -190,12 +192,14 @@ export interface AuthConfig {
 function buildNetworks(): NetworkConfig[] {
   const extrasEnabled = (process.env.MULTI_NETWORK_ENABLED ?? 'true') === 'true';
   const confirmations = parseInt(process.env.EVM_CONFIRMATIONS ?? '3', 10);
+  const alchemyKey = process.env.ALCHEMY_API_KEY;
+  // Alchemy da getLogs de archivo (lo necesita el indexer de depósitos) y rate
+  // limits altos. Si hay key, se usa para todas las redes EVM soportadas.
+  const alchemyRpc = (subdomain: string) =>
+    alchemyKey ? `https://${subdomain}.g.alchemy.com/v2/${alchemyKey}` : null;
 
   const primaryRpc =
-    process.env.EVM_RPC_URL ||
-    (process.env.ALCHEMY_API_KEY
-      ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
-      : 'https://sepolia.drpc.org');
+    process.env.EVM_RPC_URL || alchemyRpc('eth-sepolia') || 'https://sepolia.drpc.org';
 
   const primary: NetworkConfig = {
     key: process.env.EVM_NETWORK_KEY ?? 'sepolia',
@@ -203,6 +207,7 @@ function buildNetworks(): NetworkConfig[] {
     chainId: parseInt(process.env.EVM_CHAIN_ID ?? '11155111', 10),
     name: process.env.EVM_CHAIN_NAME ?? 'Sepolia',
     rpcUrl: primaryRpc,
+    fallbackRpcUrl: 'https://sepolia.drpc.org', // respaldo público si Alchemy falla
     explorerUrl: process.env.EVM_EXPLORER_URL ?? 'https://sepolia.etherscan.io',
     nativeSymbol: process.env.EVM_NATIVE_SYMBOL ?? 'ETH',
     usdcAddress: process.env.EVM_USDC_ADDRESS ?? '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
@@ -217,7 +222,11 @@ function buildNetworks(): NetworkConfig[] {
     family: 'evm',
     chainId: 80002,
     name: 'Polygon Amoy',
-    rpcUrl: process.env.POLYGON_AMOY_RPC_URL || 'https://rpc-amoy.polygon.technology',
+    rpcUrl:
+      process.env.POLYGON_AMOY_RPC_URL ||
+      alchemyRpc('polygon-amoy') ||
+      'https://rpc-amoy.polygon.technology',
+    fallbackRpcUrl: 'https://rpc-amoy.polygon.technology',
     explorerUrl: 'https://amoy.polygonscan.com',
     nativeSymbol: 'POL',
     // USDC de Circle en Amoy.
@@ -234,7 +243,11 @@ function buildNetworks(): NetworkConfig[] {
     family: 'evm',
     chainId: 97,
     name: 'BSC Testnet',
-    rpcUrl: process.env.BSC_TESTNET_RPC_URL || 'https://bsc-testnet-rpc.publicnode.com',
+    rpcUrl:
+      process.env.BSC_TESTNET_RPC_URL ||
+      alchemyRpc('bnb-testnet') ||
+      'https://bsc-testnet-rpc.publicnode.com',
+    fallbackRpcUrl: 'https://bsc-testnet-rpc.publicnode.com',
     explorerUrl: 'https://testnet.bscscan.com',
     nativeSymbol: 'tBNB',
     // USDC de testnet en BSC.
@@ -246,35 +259,39 @@ function buildNetworks(): NetworkConfig[] {
     available: true,
   };
 
-  // No-EVM: declaradas para la UI, aún no operativas (requieren SDK propio).
+  // Tron Nile testnet (USDT-TRC20: el rail de stablecoin más usado en Venezuela).
   const tron: NetworkConfig = {
     key: 'tron-nile',
     family: 'tron',
     chainId: 0,
     name: 'Tron Nile',
-    rpcUrl: '',
+    rpcUrl: process.env.TRON_RPC_URL || 'https://nile.trongrid.io',
     explorerUrl: 'https://nile.tronscan.org',
     nativeSymbol: 'TRX',
-    usdcAddress: '',
+    // USDT TRC-20 en Nile testnet.
+    usdcAddress: process.env.TRON_USDT_ADDRESS || 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf',
     confirmations: 19,
     isTestnet: true,
-    enabled: false,
-    available: false,
+    enabled: extrasEnabled,
+    available: true,
   };
 
+  // Stellar testnet (USDC de Circle; depósito por cuenta-plataforma + memo por usuario).
   const stellar: NetworkConfig = {
     key: 'stellar-testnet',
     family: 'stellar',
     chainId: 0,
     name: 'Stellar Testnet',
-    rpcUrl: '',
+    rpcUrl: process.env.STELLAR_HORIZON_URL || 'https://horizon-testnet.stellar.org',
     explorerUrl: 'https://stellar.expert/explorer/testnet',
     nativeSymbol: 'XLM',
-    usdcAddress: '',
+    // Issuer de USDC de Circle en testnet (asset code USDC).
+    usdcAddress:
+      process.env.STELLAR_USDC_ISSUER || 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
     confirmations: 1,
     isTestnet: true,
-    enabled: false,
-    available: false,
+    enabled: extrasEnabled,
+    available: true,
   };
 
   return [primary, polygonAmoy, bscTestnet, tron, stellar];

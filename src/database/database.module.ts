@@ -16,6 +16,7 @@ import { P2pTradeEntity } from './entities/p2p-trade.entity';
 import { PaymentMethodEntity } from './entities/payment-method.entity';
 import { LedgerEntryEntity } from './entities/ledger-entry.entity';
 import { PaymentEntity } from './entities/payment.entity';
+import { RechargeRequestEntity } from './entities/recharge-request.entity';
 import { TransactionEntity } from './entities/transaction.entity';
 import { UserEntity } from './entities/user.entity';
 import { WithdrawAddressEntity } from './entities/withdraw-address.entity';
@@ -52,6 +53,7 @@ import { WithdrawAddressEntity } from './entities/withdraw-address.entity';
             PaymentMethodEntity,
             AccountTokenEntity,
             WithdrawAddressEntity,
+            RechargeRequestEntity,
           ],
           synchronize: db.synchronize,
           logging: db.logging,
