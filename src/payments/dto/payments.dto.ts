@@ -1,7 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, Matches } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsOptional, IsString, Matches } from 'class-validator';
 
 const DECIMAL = /^\d+(\.\d+)?$/;
+const TOTP = /^\d{6}$/;
 
 export class TransferDto {
   @ApiProperty({ example: 'amigo@zentto.net', description: 'Email del destinatario' })
@@ -16,6 +17,12 @@ export class TransferDto {
   @IsString()
   @Matches(DECIMAL, { message: 'amount debe ser un decimal positivo' })
   amount!: string;
+
+  @ApiPropertyOptional({ example: '123456', description: 'Código Google Authenticator (2FA)' })
+  @IsOptional()
+  @IsString()
+  @Matches(TOTP, { message: 'totpCode debe ser de 6 dígitos' })
+  totpCode?: string;
 }
 
 export class CreditDto {

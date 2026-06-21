@@ -3,6 +3,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 export interface AuthUser {
   sub: string;
   email: string;
+  role?: 'user' | 'operator' | 'admin';
 }
 
 /** Inyecta el usuario autenticado (extraído del JWT por el guard) en el handler. */

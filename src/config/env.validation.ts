@@ -11,6 +11,12 @@ export const envValidationSchema = Joi.object({
   CORS_ORIGIN: Joi.string().default('*'),
   // Emails de operadores del backoffice (coma). Vacío = cualquier autenticado (dev).
   OPERATOR_EMAILS: Joi.string().allow('').default(''),
+  // URL pública del frontend (links de verificación de email / reset de contraseña).
+  APP_URL: Joi.string().default('https://neo.zentto.net'),
+
+  // zentto-notify (envío de emails transaccionales). Sin API key => dry-run (log a consola).
+  NOTIFY_BASE_URL: Joi.string().default('https://notify.zentto.net'),
+  NOTIFY_API_KEY: Joi.string().allow('').default(''),
 
   DB_HOST: Joi.string().default('localhost'),
   DB_PORT: Joi.number().default(5544),
@@ -52,12 +58,15 @@ export const envValidationSchema = Joi.object({
   COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
 
   CUSTODY_MNEMONIC: Joi.string().allow('').default(''),
-  KYC_PROVIDER: Joi.string().valid('manual', 'didit').default('manual'),
+  KYC_PROVIDER: Joi.string().valid('manual', 'didit', 'zentto').default('manual'),
   DIDIT_API_KEY: Joi.string().allow('').default(''),
   DIDIT_BASE_URL: Joi.string().default('https://verification.didit.me'),
   DIDIT_WORKFLOW_ID: Joi.string().allow('').default(''),
   DIDIT_WEBHOOK_SECRET: Joi.string().allow('').default(''),
   DIDIT_CALLBACK_URL: Joi.string().allow('').default(''),
+  // Zentto KYC: microservicio self-hosted (reemplazo gratis de Didit).
+  ZENTTO_KYC_URL: Joi.string().allow('').default(''),
+  ZENTTO_KYC_API_KEY: Joi.string().allow('').default(''),
   DEPOSIT_INDEXER_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   WITHDRAWALS_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   EVM_CONFIRMATIONS: Joi.number().min(0).default(3),
@@ -65,6 +74,13 @@ export const envValidationSchema = Joi.object({
   LEDGER_ASSETS: Joi.string().default('USDT,USDC'),
   FAUCET_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   FAUCET_MAX: Joi.number().min(0).default(1000),
+
+  // Comisiones de plataforma (modelo de negocio). Porcentajes en fracción (0.005 = 0.5%).
+  FEE_P2P_PCT: Joi.number().min(0).max(0.2).default(0.005),
+  FEE_DEPOSIT_PCT: Joi.number().min(0).max(0.2).default(0.01),
+  FEE_WITHDRAW_PCT: Joi.number().min(0).max(0.2).default(0.01),
+  FEE_WITHDRAW_NETWORK: Joi.number().min(0).default(0.5),
+  FEE_MIN: Joi.number().min(0).default(0.01),
 
   // Si se define, EVM + indexer usan Alchemy (https://eth-sepolia.g.alchemy.com/v2/<key>).
   ALCHEMY_API_KEY: Joi.string().allow('').default(''),
@@ -75,6 +91,14 @@ export const envValidationSchema = Joi.object({
   EVM_EXPLORER_URL: Joi.string().default('https://sepolia.etherscan.io'),
   EVM_NATIVE_SYMBOL: Joi.string().default('ETH'),
   EVM_USDC_ADDRESS: Joi.string().default('0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'),
+  EVM_NETWORK_KEY: Joi.string().default('sepolia'),
+
+  // Multi-red: habilita redes EVM adicionales (Polygon Amoy, BSC testnet).
+  MULTI_NETWORK_ENABLED: Joi.boolean().truthy('true').falsy('false').default(true),
+  POLYGON_AMOY_RPC_URL: Joi.string().allow('').optional(),
+  POLYGON_AMOY_USDC_ADDRESS: Joi.string().allow('').optional(),
+  BSC_TESTNET_RPC_URL: Joi.string().allow('').optional(),
+  BSC_TESTNET_USDC_ADDRESS: Joi.string().allow('').optional(),
 
   P2P_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   P2P_PORT: Joi.number().default(6001),

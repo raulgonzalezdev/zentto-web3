@@ -8,7 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type PaymentType = 'credit' | 'transfer' | 'withdrawal' | 'deposit';
+export type PaymentType = 'credit' | 'transfer' | 'receive' | 'withdrawal' | 'deposit';
 export type PaymentStatus =
   | 'created'
   | 'authorized'
