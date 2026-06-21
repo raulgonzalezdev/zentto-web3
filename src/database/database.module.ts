@@ -20,6 +20,7 @@ import { RechargeRequestEntity } from './entities/recharge-request.entity';
 import { TransactionEntity } from './entities/transaction.entity';
 import { UserEntity } from './entities/user.entity';
 import { WithdrawAddressEntity } from './entities/withdraw-address.entity';
+import { BinanceLinkEntity } from './entities/binance-link.entity';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { WithdrawAddressEntity } from './entities/withdraw-address.entity';
             AccountTokenEntity,
             WithdrawAddressEntity,
             RechargeRequestEntity,
+            BinanceLinkEntity,
           ],
           synchronize: db.synchronize,
           logging: db.logging,

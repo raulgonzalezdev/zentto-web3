@@ -171,6 +171,14 @@ export interface P2pConfig {
   nodeName: string;
 }
 
+/** Binance Pay (comerciante entidad). Vacío => módulo deshabilitado. */
+export interface BinancePayConfig {
+  baseUrl: string;
+  merchantId: string;
+  apiKey: string; // certSn / BinancePay-Certificate-SN
+  apiSecret: string; // para la firma HMAC-SHA512
+}
+
 export interface AuthConfig {
   jwtSecret: string;
   jwtRefreshSecret: string;
@@ -395,6 +403,12 @@ export default () => ({
     minFee: parseFloat(process.env.FEE_MIN ?? '0.01'),
   } satisfies FeesConfig,
   networks: { list: buildNetworks() } satisfies NetworksConfig,
+  binancePay: {
+    baseUrl: process.env.BINANCE_PAY_BASE_URL ?? 'https://bpay.binanceapi.com',
+    merchantId: process.env.BINANCE_PAY_MERCHANT_ID ?? '',
+    apiKey: process.env.BINANCE_PAY_API_KEY ?? '',
+    apiSecret: process.env.BINANCE_PAY_API_SECRET ?? '',
+  } satisfies BinancePayConfig,
   p2p: {
     enabled: (process.env.P2P_ENABLED ?? 'false') === 'true',
     port: parseInt(process.env.P2P_PORT ?? '6001', 10),

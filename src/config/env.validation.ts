@@ -102,6 +102,12 @@ export const envValidationSchema = Joi.object({
   BSC_TESTNET_RPC_URL: Joi.string().allow('').optional(),
   BSC_TESTNET_USDC_ADDRESS: Joi.string().allow('').optional(),
 
+  // Binance Pay (comerciante entidad). Vacío => módulo deshabilitado (endpoints 503).
+  BINANCE_PAY_BASE_URL: Joi.string().default('https://bpay.binanceapi.com'),
+  BINANCE_PAY_MERCHANT_ID: Joi.string().allow('').default(''),
+  BINANCE_PAY_API_KEY: Joi.string().allow('').default(''),
+  BINANCE_PAY_API_SECRET: Joi.string().allow('').default(''),
+
   P2P_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   P2P_PORT: Joi.number().default(6001),
   PEERS: Joi.string().allow('').default(''),
