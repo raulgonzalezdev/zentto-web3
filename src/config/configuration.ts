@@ -298,7 +298,8 @@ function buildNetworks(): NetworkConfig[] {
     tokens: [{ address: process.env.TRON_USDT_ADDRESS || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', asset: 'USDT' }],
     confirmations: 19,
     isTestnet: false,
-    enabled: false,
+    // Tron ya tiene indexer de depósitos (USDT-TRC20). Se activa con TRON_ENABLED=true.
+    enabled: (process.env.TRON_ENABLED ?? 'false') === 'true',
     available: (process.env.TRON_ENABLED ?? 'false') === 'true',
   };
 

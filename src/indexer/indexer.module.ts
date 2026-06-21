@@ -7,6 +7,7 @@ import { PaymentEntity } from '../database/entities/payment.entity';
 import { EvmModule } from '../evm/evm.module';
 import { FeesModule } from '../fees/fees.module';
 import { LedgerModule } from '../ledger/ledger.module';
+import { TronService } from '../custody/tron.service';
 import { AlchemyWebhookController } from './alchemy-webhook.controller';
 import { DepositIndexerService } from './deposit-indexer.service';
 import { IndexerController } from './indexer.controller';
@@ -24,6 +25,6 @@ import { IndexerController } from './indexer.controller';
     FeesModule,
   ],
   controllers: [IndexerController, AlchemyWebhookController],
-  providers: [DepositIndexerService],
+  providers: [DepositIndexerService, TronService],
 })
 export class IndexerModule {}
