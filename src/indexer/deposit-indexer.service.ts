@@ -13,10 +13,14 @@ import { EvmService } from '../evm/evm.service';
 import { FEE_ACCOUNT, FeeService } from '../fees/fee.service';
 import { isPositive } from '../common/money.util';
 import { LedgerService } from '../ledger/ledger.service';
+import { TronService } from '../custody/tron.service';
+import { NetworksConfig } from '../config/configuration';
 
 // Las direcciones de depósito EVM se almacenan bajo esta clave canónica (compartida).
 const NETWORK_EVM = 'evm';
+const NETWORK_TRON = 'tron';
 const SYSTEM_CUSTODY = 'custody';
+const TRON_USDT_DECIMALS = 6;
 
 export interface ScanResult {
   fromBlock: string;
@@ -36,6 +40,7 @@ export interface ScanResult {
 export class DepositIndexerService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(DepositIndexerService.name);
   private readonly cfg: IndexerConfig;
+  private readonly tronToken: string;
   private scanning = false;
   private timer?: NodeJS.Timeout;
 
@@ -48,10 +53,15 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     private readonly evm: EvmService,
     private readonly ledger: LedgerService,
     private readonly fees: FeeService,
+    private readonly tron: TronService,
     private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<IndexerConfig>('indexer');
+    const tronNet = config
+      .getOrThrow<NetworksConfig>('networks')
+      .list.find((n) => n.family === 'tron');
+    this.tronToken = tronNet?.usdcAddress ?? '';
   }
 
   onModuleInit(): void {
@@ -120,34 +130,78 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
     if (this.scanning) return { fromBlock: '0', toBlock: '0', found: 0, credited: 0 };
     this.scanning = true;
     try {
-      // Direcciones de depósito EVM (compartidas entre redes de la familia).
-      const addrRows = await this.deposits.find({ where: { network: NETWORK_EVM } });
-      const byAddress = new Map(addrRows.map((a) => [a.address.toLowerCase(), a.userId]));
-      const addresses = addrRows.map((a) => a.address);
-      if (addresses.length === 0) {
-        return { fromBlock: '0', toBlock: '0', found: 0, credited: 0 };
-      }
-
       let found = 0;
       let credited = 0;
       let lastFrom = '0';
       let lastTo = '0';
-      for (const netKey of this.evm.evmKeys) {
-        const r = await this.scanNetwork(netKey, addresses, byAddress).catch((err) => {
-          this.logger.warn(`Indexer ${netKey}: ${(err as Error).message}`);
-          return null;
-        });
-        if (!r) continue;
-        found += r.found;
-        credited += r.credited;
-        lastFrom = r.fromBlock;
-        lastTo = r.toBlock;
+
+      // ── EVM (Ethereum/Polygon/BSC): direcciones compartidas por familia ──
+      const addrRows = await this.deposits.find({ where: { network: NETWORK_EVM } });
+      const byAddress = new Map(addrRows.map((a) => [a.address.toLowerCase(), a.userId]));
+      const addresses = addrRows.map((a) => a.address);
+      if (addresses.length > 0) {
+        for (const netKey of this.evm.evmKeys) {
+          const r = await this.scanNetwork(netKey, addresses, byAddress).catch((err) => {
+            this.logger.warn(`Indexer ${netKey}: ${(err as Error).message}`);
+            return null;
+          });
+          if (!r) continue;
+          found += r.found;
+          credited += r.credited;
+          lastFrom = r.fromBlock;
+          lastTo = r.toBlock;
+        }
       }
+
+      // ── Tron (USDT-TRC20): polling por dirección vía TronGrid/Alchemy ──
+      credited += await this.scanTron().catch((err) => {
+        this.logger.warn(`Indexer tron: ${(err as Error).message}`);
+        return 0;
+      });
+
       if (credited > 0) this.logger.log(`Indexer: ${credited} depósito(s) acreditados`);
       return { fromBlock: lastFrom, toBlock: lastTo, found, credited };
     } finally {
       this.scanning = false;
     }
+  }
+
+  /**
+   * Indexer Tron: por cada dirección de depósito Tron del usuario, consulta las
+   * transferencias TRC-20 (USDT) entrantes y las acredita (idempotente por txId).
+   * Usa un cursor de timestamp con solape para no perder ni duplicar.
+   */
+  private async scanTron(): Promise<number> {
+    if (!this.tron.enabled) return 0;
+    const rows = await this.deposits.find({ where: { network: NETWORK_TRON } });
+    if (rows.length === 0) return 0;
+
+    const cursor = await this.cursors.findOne({ where: { network: NETWORK_TRON } });
+    const overlapMs = 10 * 60_000; // 10 min de solape (idempotencia evita duplicar)
+    const bootstrapMs = 7 * 24 * 3600_000; // primer escaneo: última semana
+    const nowMs = Date.now();
+    const sinceMs = cursor
+      ? Math.max(0, Number(cursor.lastBlock) - overlapMs)
+      : nowMs - bootstrapMs;
+
+    let credited = 0;
+    for (const row of rows) {
+      const transfers = await this.tron.getIncomingTransfers(row.address, sinceMs);
+      for (const t of transfers) {
+        const amount = formatUnits(t.value, TRON_USDT_DECIMALS);
+        const ok = await this.creditDeposit(
+          NETWORK_TRON,
+          this.tronToken,
+          row.userId,
+          { txHash: t.txId, logIndex: 0, value: t.value, blockNumber: 0n },
+          amount,
+          'USDT',
+        );
+        if (ok) credited++;
+      }
+    }
+    await this.cursors.save({ network: NETWORK_TRON, lastBlock: String(nowMs) } as ChainCursorEntity);
+    return credited;
   }
 
   /** Escaneo de UNA red EVM: avanza su cursor propio y acredita los confirmados. */
