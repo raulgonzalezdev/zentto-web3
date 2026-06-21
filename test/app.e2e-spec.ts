@@ -18,10 +18,17 @@ describe('Zentto Web3 (e2e)', () => {
   let agent: ReturnType<typeof request.agent>;
   let csrf: string;
   let minerAddress: string;
+  let totpSecret: string; // 2FA compartido para transferencia + retiro
 
   beforeAll(async () => {
     process.env.CHAIN_DIFFICULTY = process.env.CHAIN_DIFFICULTY ?? '2';
     process.env.MINING_REWARD = process.env.MINING_REWARD ?? '50';
+    // Comisiones en 0 para aserciones financieras limpias en e2e (se prueban aparte).
+    process.env.FEE_P2P_PCT = '0';
+    process.env.FEE_DEPOSIT_PCT = '0';
+    process.env.FEE_WITHDRAW_PCT = '0';
+    process.env.FEE_WITHDRAW_NETWORK = '0';
+    process.env.FEE_MIN = '0';
     // Secretos efímeros generados al vuelo (no se hardcodean → sin alertas de secret-scanning).
     process.env.JWT_SECRET = process.env.JWT_SECRET ?? randomBytes(48).toString('base64url');
     process.env.JWT_REFRESH_SECRET =
@@ -137,7 +144,17 @@ describe('Zentto Web3 (e2e)', () => {
     expect(usdt.available).toBe('100');
   });
 
-  it('transferencia interna descuenta del emisor (idempotente)', async () => {
+  it('habilita 2FA (Google Authenticator) para autorizar movimientos de dinero', async () => {
+    const setup = await agent.post('/api/auth/2fa/setup').set('x-csrf-token', csrf).expect(201);
+    totpSecret = setup.body.secret as string;
+    await agent
+      .post('/api/auth/2fa/enable')
+      .set('x-csrf-token', csrf)
+      .send({ code: authenticator.generate(totpSecret) })
+      .expect(201);
+  });
+
+  it('transferencia interna descuenta del emisor (idempotente, requiere 2FA)', async () => {
     const bEmail = `e2e_b_${Date.now()}@zentto.net`;
     await request(app.getHttpServer())
       .post('/api/auth/register')
@@ -150,7 +167,12 @@ describe('Zentto Web3 (e2e)', () => {
         .post('/api/payments/transfer')
         .set('x-csrf-token', csrf)
         .set('Idempotency-Key', key)
-        .send({ toEmail: bEmail, asset: 'USDT', amount: '30' });
+        .send({
+          toEmail: bEmail,
+          asset: 'USDT',
+          amount: '30',
+          totpCode: authenticator.generate(totpSecret),
+        });
     await transfer().expect(201);
     await transfer().expect(201); // idempotente: no vuelve a descontar
 
@@ -162,7 +184,7 @@ describe('Zentto Web3 (e2e)', () => {
   it('asigna una dirección de depósito on-chain (HD)', async () => {
     const res = await agent.get('/api/accounts/deposit-address').expect(200);
     expect(res.body.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
-    expect(res.body.network).toBe('evm');
+    expect(res.body.network).toBe('sepolia'); // red primaria del catálogo multi-red
   });
 
   it('el retiro exige Google Authenticator (TOTP): sin código → 400', async () => {
@@ -173,7 +195,7 @@ describe('Zentto Web3 (e2e)', () => {
       .send({ asset: 'USDC', amount: '100' })
       .expect(201);
 
-    // Sin 2FA habilitado aún → retiro bloqueado.
+    // 2FA activo pero sin enviar el código → retiro bloqueado.
     await agent
       .post('/api/payments/withdraw')
       .set('x-csrf-token', csrf)
@@ -187,15 +209,6 @@ describe('Zentto Web3 (e2e)', () => {
   });
 
   it('retiro autorizado con TOTP coloca un hold: disponible baja, saldo intacto', async () => {
-    // Habilita 2FA (como escanear el QR en Google Authenticator).
-    const setup = await agent.post('/api/auth/2fa/setup').set('x-csrf-token', csrf).expect(201);
-    const secret = setup.body.secret as string;
-    await agent
-      .post('/api/auth/2fa/enable')
-      .set('x-csrf-token', csrf)
-      .send({ code: authenticator.generate(secret) })
-      .expect(201);
-
     const res = await agent
       .post('/api/payments/withdraw')
       .set('x-csrf-token', csrf)
@@ -204,7 +217,7 @@ describe('Zentto Web3 (e2e)', () => {
         asset: 'USDC',
         amount: '30',
         toAddress: '0x000000000000000000000000000000000000dead',
-        totpCode: authenticator.generate(secret),
+        totpCode: authenticator.generate(totpSecret),
       })
       .expect(201);
     expect(res.body.status).toBe('processing');
