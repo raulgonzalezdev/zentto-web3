@@ -23,6 +23,7 @@ import { IndexerModule } from './indexer/indexer.module';
 import { KycModule } from './kyc/kyc.module';
 import { P2pMarketModule } from './marketplace/p2p-market.module';
 import { MiningModule } from './mining/mining.module';
+import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { PaymentsModule } from './payments/payments.module';
 import { P2pModule } from './p2p/p2p.module';
 import { WalletsModule } from './wallets/wallets.module';
@@ -59,6 +60,7 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     KycModule,
     AdminModule,
     P2pMarketModule,
+    PaymentMethodsModule,
     HealthModule,
   ],
   providers: [

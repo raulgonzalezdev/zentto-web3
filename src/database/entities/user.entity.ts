@@ -19,6 +19,10 @@ export class UserEntity {
   @Column({ type: 'varchar', length: 100, nullable: true })
   displayName!: string | null;
 
+  /** Rol: 'user' (cliente del neobanco) | 'operator' | 'admin' (backoffice). */
+  @Column({ type: 'varchar', length: 16, default: 'user' })
+  role!: 'user' | 'operator' | 'admin';
+
   @Column({ type: 'varchar', length: 255 })
   passwordHash!: string;
 

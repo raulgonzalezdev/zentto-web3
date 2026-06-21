@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { OperatorGuard } from './operator.guard';
@@ -31,5 +31,11 @@ export class AdminController {
   @ApiOperation({ summary: 'Todos los pagos del sistema (filtro ?type=)' })
   payments(@Query('type') type?: string) {
     return this.admin.listPayments(type);
+  }
+
+  @Post('users/:id/role')
+  @ApiOperation({ summary: 'Cambiar el rol de un usuario (user|operator|admin)' })
+  setRole(@Param('id') id: string, @Body() body: { role: 'user' | 'operator' | 'admin' }) {
+    return this.admin.setRole(id, body?.role);
   }
 }

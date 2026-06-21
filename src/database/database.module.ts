@@ -11,6 +11,7 @@ import { KycVerificationEntity } from './entities/kyc-verification.entity';
 import { LedgerAccountEntity } from './entities/ledger-account.entity';
 import { P2pOrderEntity } from './entities/p2p-order.entity';
 import { P2pTradeEntity } from './entities/p2p-trade.entity';
+import { PaymentMethodEntity } from './entities/payment-method.entity';
 import { LedgerEntryEntity } from './entities/ledger-entry.entity';
 import { PaymentEntity } from './entities/payment.entity';
 import { TransactionEntity } from './entities/transaction.entity';
@@ -44,6 +45,7 @@ import { UserEntity } from './entities/user.entity';
             KycVerificationEntity,
             P2pOrderEntity,
             P2pTradeEntity,
+            PaymentMethodEntity,
           ],
           synchronize: db.synchronize,
           logging: db.logging,

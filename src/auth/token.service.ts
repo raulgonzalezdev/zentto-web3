@@ -36,9 +36,9 @@ export class TokenService {
     };
   }
 
-  signAccess(user: Pick<UserEntity, 'id' | 'email'>): string {
+  signAccess(user: Pick<UserEntity, 'id' | 'email' | 'role'>): string {
     return this.jwt.sign(
-      { sub: user.id, email: user.email },
+      { sub: user.id, email: user.email, role: user.role },
       { secret: this.auth.jwtSecret, expiresIn: this.auth.accessTtl },
     );
   }

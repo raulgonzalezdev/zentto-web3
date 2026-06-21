@@ -11,20 +11,24 @@ import { randomUUID } from 'crypto';
 import { authenticator } from 'otplib';
 import * as QRCode from 'qrcode';
 import { Repository } from 'typeorm';
-import { AuthConfig } from '../config/configuration';
+import { AppConfig, AuthConfig } from '../config/configuration';
 import { UserEntity } from '../database/entities/user.entity';
 import { TokenService } from './token.service';
+
+export type UserRole = 'user' | 'operator' | 'admin';
 
 export interface PublicUser {
   id: string;
   email: string;
   displayName: string | null;
   totpEnabled: boolean;
+  role: UserRole;
 }
 
 @Injectable()
 export class AuthService {
   private readonly auth: AuthConfig;
+  private readonly operatorEmails: string[];
 
   constructor(
     @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
@@ -32,10 +36,22 @@ export class AuthService {
     config: ConfigService,
   ) {
     this.auth = config.getOrThrow<AuthConfig>('auth');
+    this.operatorEmails = config.getOrThrow<AppConfig>('app').operatorEmails;
+  }
+
+  /** Rol de arranque: los emails en OPERATOR_EMAILS son admin del backoffice. */
+  private bootstrapRole(email: string): UserRole {
+    return this.operatorEmails.includes(email.toLowerCase()) ? 'admin' : 'user';
   }
 
   toPublic(u: UserEntity): PublicUser {
-    return { id: u.id, email: u.email, displayName: u.displayName, totpEnabled: u.totpEnabled };
+    return {
+      id: u.id,
+      email: u.email,
+      displayName: u.displayName,
+      totpEnabled: u.totpEnabled,
+      role: u.role,
+    };
   }
 
   async getById(id: string): Promise<UserEntity> {
@@ -55,6 +71,7 @@ export class AuthService {
       id: randomUUID(),
       email: normalized,
       displayName: displayName ?? null,
+      role: this.bootstrapRole(normalized),
       passwordHash: await bcrypt.hash(password, this.auth.bcryptRounds),
       totpEnabled: false,
       totpSecret: null,
@@ -71,6 +88,12 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('Credenciales inválidas');
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('Credenciales inválidas');
+    // Bootstrap: promueve a admin si su email está en OPERATOR_EMAILS.
+    const expected = this.bootstrapRole(user.email);
+    if (expected === 'admin' && user.role !== 'admin') {
+      user.role = 'admin';
+      await this.users.save(user);
+    }
     return user;
   }
 

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -98,6 +98,18 @@ export class AdminService {
       failureReason: r.failureReason,
       createdAt: r.createdAt,
     }));
+  }
+
+  /** Cambia el rol de un usuario (solo admin). */
+  async setRole(userId: string, role: 'user' | 'operator' | 'admin') {
+    if (!['user', 'operator', 'admin'].includes(role)) {
+      throw new BadRequestException('Rol inválido');
+    }
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+    user.role = role;
+    await this.users.save(user);
+    return { id: user.id, email: user.email, role: user.role };
   }
 
   /** Métricas del panel de operaciones. */

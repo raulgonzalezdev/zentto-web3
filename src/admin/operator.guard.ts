@@ -17,12 +17,16 @@ export class OperatorGuard implements CanActivate {
   }
 
   canActivate(context: ExecutionContext): boolean {
-    if (this.operators.length === 0) return true; // dev: sin lista, abierto a autenticados
-    const req = context.switchToHttp().getRequest<Request & { user?: { email?: string } }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<Request & { user?: { email?: string; role?: string } }>();
+    const role = req.user?.role;
+    if (role === 'admin' || role === 'operator') return true;
+    // Fallback (tokens viejos sin rol / bootstrap): email en OPERATOR_EMAILS.
     const email = (req.user?.email ?? '').toLowerCase();
-    if (!this.operators.includes(email)) {
-      throw new ForbiddenException('Acceso restringido a operadores del backoffice');
-    }
-    return true;
+    if (this.operators.length > 0 && this.operators.includes(email)) return true;
+    // Sin lista y sin rol elevado: en dev se permite a autenticados.
+    if (this.operators.length === 0 && !role) return true;
+    throw new ForbiddenException('Acceso restringido a operadores del backoffice');
   }
 }
