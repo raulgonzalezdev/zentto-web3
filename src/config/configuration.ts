@@ -95,6 +95,8 @@ export interface KycConfig {
   zenttoKycBaseUrl: string;
   zenttoKycCallbackUrl: string;
   zenttoKycWebhookSecret: string;
+  /** Workflow del dashboard de zentto-kyc (define qué features pide). Opcional. */
+  zenttoKycWorkflowId: string;
 }
 
 export interface WithdrawalsConfig {
@@ -370,6 +372,7 @@ export default () => ({
     zenttoKycBaseUrl: process.env.ZENTTO_KYC_BASE_URL ?? 'https://kyc.zentto.net',
     zenttoKycCallbackUrl: process.env.ZENTTO_KYC_CALLBACK_URL ?? '',
     zenttoKycWebhookSecret: process.env.ZENTTO_KYC_WEBHOOK_SECRET ?? '',
+    zenttoKycWorkflowId: process.env.ZENTTO_KYC_WORKFLOW_ID ?? '',
   } satisfies KycConfig,
   indexer: {
     enabled: (process.env.DEPOSIT_INDEXER_ENABLED ?? 'false') === 'true',

@@ -29,7 +29,10 @@ async function bootstrap() {
   // El webhook de Didit se sirve también en /webhook/didit (sin el prefijo /api),
   // para que coincida con la URL registrada en el dashboard de Didit.
   app.setGlobalPrefix(appCfg.apiPrefix, {
-    exclude: [{ path: 'webhook/didit', method: RequestMethod.POST }],
+    exclude: [
+      { path: 'webhook/didit', method: RequestMethod.POST },
+      { path: 'webhook/kyc', method: RequestMethod.POST },
+    ],
   });
   app.useGlobalPipes(
     new ValidationPipe({

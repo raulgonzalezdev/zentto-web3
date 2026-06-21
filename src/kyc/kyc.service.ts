@@ -15,6 +15,7 @@ import { AmlScreeningService } from './aml-screening.service';
 import { KycSubmitDto } from './dto/kyc.dto';
 import { MrzService } from './mrz.service';
 import { DiditApiService, UploadFile } from './providers/didit-api.service';
+import { ZenttoKycApiService } from './providers/zentto-kyc-api.service';
 import { verifyDiditSignature } from './providers/didit-webhook.util';
 import { DiditProvider } from './providers/didit.provider';
 import { KycProvider } from './providers/kyc-provider';
@@ -48,6 +49,7 @@ export class KycService {
     private readonly mrz: MrzService,
     private readonly aml: AmlScreeningService,
     private readonly diditApi: DiditApiService,
+    private readonly zenttoApi: ZenttoKycApiService,
     config: ConfigService,
   ) {
     this.cfg = config.getOrThrow<KycConfig>('kyc');
@@ -203,12 +205,17 @@ export class KycService {
     files: { front?: UploadFile; back?: UploadFile; selfie?: UploadFile },
     fullNameInput?: string,
   ): Promise<KycStatusView> {
+    if (!files.front) throw new BadRequestException('front_image es obligatoria');
+    // NATIVO: si el proveedor es zentto-kyc, procesa con nuestro servicio propio
+    // (la app sube las imágenes; nada de frontend hospedado).
+    if (this.cfg.provider === 'zentto-kyc' && this.zenttoApi.enabled) {
+      return this.verifyWithZenttoKyc(userId, files, fullNameInput);
+    }
     if (!this.diditApi.enabled) {
       throw new BadRequestException(
-        'Verificación con Didit no configurada (DIDIT_API_KEY ausente)',
+        'Verificación de documentos no configurada (sin proveedor de inferencia)',
       );
     }
-    if (!files.front) throw new BadRequestException('front_image es obligatoria');
     const existing = await this.repo.findOne({ where: { userId } });
     if (existing && existing.status === 'approved') {
       throw new BadRequestException('Tu identidad ya está verificada');
@@ -270,6 +277,71 @@ export class KycService {
       });
       await this.repo.save(entity);
       return { id: entity.id, status: 'in_review', provider: 'didit' };
+    }
+  }
+
+  /**
+   * Verificación NATIVA con zentto-kyc: crea una sesión, sube documento + selfie a
+   * nuestro inference (OCR/MRZ + liveness + face-match), lee la decisión de la
+   * sesión y la combina con OFAC propio. No abre ningún frontend.
+   */
+  private async verifyWithZenttoKyc(
+    userId: string,
+    files: { front?: UploadFile; back?: UploadFile; selfie?: UploadFile },
+    fullNameInput?: string,
+  ): Promise<KycStatusView> {
+    const existing = await this.repo.findOne({ where: { userId } });
+    if (existing && existing.status === 'approved') {
+      throw new BadRequestException('Tu identidad ya está verificada');
+    }
+    const entity =
+      existing ?? this.repo.create({ id: randomUUID(), userId, status: 'not_started' });
+    try {
+      const sessionId = await this.zenttoApi.createSession(userId);
+      await this.zenttoApi.idVerification(sessionId, files.front!, files.back);
+      if (files.selfie) {
+        await this.zenttoApi.liveness(sessionId, files.selfie);
+        await this.zenttoApi.faceMatch(sessionId, files.selfie, files.front!);
+      }
+      const s = await this.zenttoApi.getSession(sessionId);
+
+      const fullName = (fullNameInput ?? s.fullName ?? '').trim();
+      const ofac = this.aml.screen(fullName);
+      const sStatus = s.decision ?? s.status ?? 'in_review';
+      const status: KycStatus =
+        sStatus === 'declined'
+          ? 'rejected'
+          : sStatus === 'approved' && !ofac.match
+            ? 'approved'
+            : 'in_review';
+
+      Object.assign(entity, {
+        status,
+        provider: 'zentto-kyc',
+        providerRef: sessionId,
+        fullName: fullName || entity.fullName,
+        documentType: s.documentType ?? entity.documentType,
+        documentNumber: s.documentNumber ?? entity.documentNumber,
+        nationality: s.nationality ?? entity.nationality,
+        birthDate: s.birthDate ?? entity.birthDate,
+        mrzValid: s.mrzValid ?? entity.mrzValid,
+        amlMatch: ofac.match,
+        amlHits: ofac.hits,
+        livenessPassed: status === 'approved' ? true : status === 'rejected' ? false : null,
+        decisionReason: status === 'rejected' ? 'Documento o biometría rechazados' : null,
+      });
+      await this.repo.save(entity);
+      this.logger.log(`KYC ${entity.id} → ${status} (zentto-kyc nativo, sesión ${sessionId})`);
+      return { id: entity.id, status, provider: 'zentto-kyc', amlMatch: ofac.match };
+    } catch (err) {
+      this.logger.error(`verifyWithZenttoKyc error: ${(err as Error).message}`);
+      Object.assign(entity, {
+        status: 'in_review',
+        provider: 'zentto-kyc',
+        decisionReason: `Error del servicio KYC: ${(err as Error).message}`,
+      });
+      await this.repo.save(entity);
+      return { id: entity.id, status: 'in_review', provider: 'zentto-kyc' };
     }
   }
 
