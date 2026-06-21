@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
@@ -131,24 +137,46 @@ export class CustodyService implements OnModuleInit {
    * externa, EN LA RED indicada. Devuelve el txHash. Lanza si falta gas/saldo (lo
    * maneja el worker de retiros liberando el hold = reembolso).
    */
-  async sendUsdc(toAddress: string, amount: string, networkKey?: string): Promise<string> {
+  /**
+   * Envía un token (USDT/USDC) on-chain desde el hot wallet, en la red y asset
+   * indicados. Elige el contrato correcto por asset y usa SUS decimales (BSC USDT
+   * = 18, no 6). Rutea por familia: EVM (viem), Tron (TRC-20), Solana (pendiente).
+   */
+  async sendToken(
+    toAddress: string,
+    amount: string,
+    asset: string,
+    networkKey?: string,
+  ): Promise<string> {
     if (!this.enabled) {
       throw new ServiceUnavailableException('Custodia no configurada (CUSTODY_MNEMONIC ausente)');
     }
-    const { cfg, chain } = this.evmNet(networkKey);
-    const transport = cfg.fallbackRpcUrl
-      ? fallback([http(cfg.rpcUrl), http(cfg.fallbackRpcUrl)])
-      : http(cfg.rpcUrl);
-    const wallet: WalletClient = createWalletClient({
-      account: this.hotAccount(),
-      chain,
-      transport,
-    });
-    const value = parseUnits(amount, 6); // USDC = 6 decimales
+    const netCfg = networkKey ? this.netByKey.get(networkKey) : this.evmNet().cfg;
+    if (!netCfg) throw new ServiceUnavailableException(`Red no soportada: ${networkKey}`);
+    const want = (asset || netCfg.asset).toUpperCase();
+
+    if (netCfg.family === 'tron') {
+      if (want !== 'USDT') throw new BadRequestException('En Tron solo se retira USDT (TRC-20)');
+      return this.tron.sendUsdt(toAddress, amount);
+    }
+    if (netCfg.family === 'solana' || netCfg.family === 'stellar') {
+      throw new ServiceUnavailableException(`Retiros en ${netCfg.name} próximamente`);
+    }
+
+    // EVM: contrato del asset pedido + sus decimales reales.
+    const token =
+      (netCfg.tokens ?? []).find((t) => t.asset === want) ??
+      ({ address: netCfg.usdcAddress, asset: netCfg.asset, decimals: 6 } as const);
+    const { chain } = this.evmNet(networkKey);
+    const transport = netCfg.fallbackRpcUrl
+      ? fallback([http(netCfg.rpcUrl), http(netCfg.fallbackRpcUrl)])
+      : http(netCfg.rpcUrl);
+    const wallet: WalletClient = createWalletClient({ account: this.hotAccount(), chain, transport });
+    const value = parseUnits(amount, token.decimals);
     return wallet.writeContract({
       account: this.hotAccount(),
       chain,
-      address: cfg.usdcAddress as `0x${string}`,
+      address: token.address as `0x${string}`,
       abi: ERC20_TRANSFER_ABI,
       functionName: 'transfer',
       args: [toAddress as `0x${string}`, value],
