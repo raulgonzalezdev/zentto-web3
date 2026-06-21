@@ -1,11 +1,19 @@
-import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { CSRF_COOKIE, REFRESH_COOKIE } from './auth.constants';
 import { AuthService } from './auth.service';
 import { AuthUser, CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
-import { LoginDto, RegisterDto, TotpCodeDto, TwoFactorLoginDto } from './dto/auth.dto';
+import {
+  ForgotPasswordDto,
+  LoginDto,
+  RegisterDto,
+  ResetPasswordDto,
+  TotpCodeDto,
+  TwoFactorLoginDto,
+  VerifyEmailDto,
+} from './dto/auth.dto';
 import { TokenService } from './token.service';
 
 @ApiTags('auth')
@@ -79,6 +87,39 @@ export class AuthController {
     const user = await this.auth.validateRefresh(token);
     this.tokens.issueSession(res, user);
     return { user: this.auth.toPublic(user) };
+  }
+
+  @Public()
+  @Post('verify-email')
+  @ApiOperation({ summary: 'Verifica el correo a partir del token enviado por email' })
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    await this.auth.verifyEmail(dto.token);
+    return { ok: true };
+  }
+
+  @Post('resend-verification')
+  @ApiOperation({ summary: 'Reenvía el email de verificación (si no está verificado)' })
+  async resendVerification(@CurrentUser() current: AuthUser) {
+    await this.auth.resendVerification(current.sub);
+    return { ok: true };
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Solicita un email de restablecimiento (siempre responde 200)' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.auth.forgotPassword(dto.email);
+    // Respuesta neutra: no revela si el email existe (anti-enumeración).
+    return { ok: true };
+  }
+
+  @Public()
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Cambia la contraseña con el token de restablecimiento' })
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.auth.resetPassword(dto.token, dto.newPassword);
+    return { ok: true };
   }
 
   @Get('me')

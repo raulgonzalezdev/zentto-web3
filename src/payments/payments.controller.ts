@@ -42,6 +42,7 @@ export class PaymentsController {
       dto.asset,
       dto.amount,
       key || randomUUID(),
+      dto.totpCode,
     );
   }
 

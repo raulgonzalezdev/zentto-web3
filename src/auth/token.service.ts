@@ -36,9 +36,18 @@ export class TokenService {
     };
   }
 
-  signAccess(user: Pick<UserEntity, 'id' | 'email'>): string {
+  /** Convierte un TTL tipo '15m' / '7d' / '24h' / '900s' a milisegundos. */
+  private ttlToMs(ttl: string): number {
+    const m = /^(\d+)\s*([smhd])$/.exec(ttl.trim());
+    if (!m) return 0;
+    const n = parseInt(m[1], 10);
+    const mult = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2]] ?? 0;
+    return n * mult;
+  }
+
+  signAccess(user: Pick<UserEntity, 'id' | 'email' | 'role'>): string {
     return this.jwt.sign(
-      { sub: user.id, email: user.email },
+      { sub: user.id, email: user.email, role: user.role },
       { secret: this.auth.jwtSecret, expiresIn: this.auth.accessTtl },
     );
   }
@@ -71,8 +80,16 @@ export class TokenService {
   }
 
   issueSession(res: Response, user: UserEntity): void {
-    res.cookie(ACCESS_COOKIE, this.signAccess(user), this.baseCookie());
-    res.cookie(REFRESH_COOKIE, this.signRefresh(user), { ...this.baseCookie() });
+    // maxAge => cookies PERSISTENTES (sobreviven cerrar la app/WebView). Sin él
+    // serían "de sesión" y Android las borra al cerrar → re-login en cada apertura.
+    res.cookie(ACCESS_COOKIE, this.signAccess(user), {
+      ...this.baseCookie(),
+      maxAge: this.ttlToMs(this.auth.accessTtl) || 15 * 60_000,
+    });
+    res.cookie(REFRESH_COOKIE, this.signRefresh(user), {
+      ...this.baseCookie(),
+      maxAge: this.ttlToMs(this.auth.refreshTtl) || 7 * 86_400_000,
+    });
   }
 
   clearSession(res: Response): void {

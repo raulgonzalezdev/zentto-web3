@@ -11,7 +11,7 @@ import {
   parseAbiItem,
   PublicClient,
 } from 'viem';
-import { EvmConfig } from '../config/configuration';
+import { NetworkConfig, NetworksConfig } from '../config/configuration';
 
 /** ABI mínimo ERC-20 para leer saldo, decimales y símbolo de un token. */
 const ERC20_ABI = [
@@ -53,47 +53,73 @@ export interface TokenBalance {
  * la wallet del usuario (no custodial) o, en el modelo custodial del neobanco, un
  * servicio de custodia/MPC aparte. Aquí solo consultamos la cadena pública.
  */
+interface NetEntry {
+  cfg: NetworkConfig;
+  chain: Chain;
+  client: PublicClient;
+}
+
 @Injectable()
 export class EvmService implements OnModuleInit {
   private readonly logger = new Logger(EvmService.name);
-  private readonly cfg: EvmConfig;
-  private readonly chain: Chain;
-  private readonly client: PublicClient;
+  private readonly nets = new Map<string, NetEntry>();
+  private readonly primaryKey: string;
 
   constructor(config: ConfigService) {
-    this.cfg = config.getOrThrow<EvmConfig>('evm');
-    this.chain = defineChain({
-      id: this.cfg.chainId,
-      name: this.cfg.chainName,
-      nativeCurrency: { name: this.cfg.nativeSymbol, symbol: this.cfg.nativeSymbol, decimals: 18 },
-      rpcUrls: { default: { http: [this.cfg.rpcUrl] } },
-      blockExplorers: { default: { name: 'Explorer', url: this.cfg.explorerUrl } },
-    });
-    this.client = createPublicClient({ chain: this.chain, transport: http(this.cfg.rpcUrl) });
+    const networks = config.getOrThrow<NetworksConfig>('networks').list;
+    const evmNets = networks.filter((n) => n.family === 'evm' && n.enabled);
+    for (const cfg of evmNets) {
+      const chain = defineChain({
+        id: cfg.chainId,
+        name: cfg.name,
+        nativeCurrency: { name: cfg.nativeSymbol, symbol: cfg.nativeSymbol, decimals: 18 },
+        rpcUrls: { default: { http: [cfg.rpcUrl] } },
+        blockExplorers: { default: { name: 'Explorer', url: cfg.explorerUrl } },
+      });
+      const client = createPublicClient({ chain, transport: http(cfg.rpcUrl) });
+      this.nets.set(cfg.key, { cfg, chain, client });
+    }
+    this.primaryKey = evmNets[0]?.key ?? 'sepolia';
   }
 
   async onModuleInit(): Promise<void> {
-    try {
-      const block = await this.client.getBlockNumber();
-      this.logger.log(
-        `Conectado a ${this.cfg.chainName} (chainId=${this.cfg.chainId}) — bloque ${block}`,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `No se pudo conectar al RPC EVM (${this.cfg.rpcUrl}): ${(err as Error).message}`,
-      );
+    for (const { cfg, client } of this.nets.values()) {
+      try {
+        const block = await client.getBlockNumber();
+        this.logger.log(`Conectado a ${cfg.name} (chainId=${cfg.chainId}) — bloque ${block}`);
+      } catch (err) {
+        this.logger.warn(`No se pudo conectar al RPC de ${cfg.name}: ${(err as Error).message}`);
+      }
     }
   }
 
-  async getInfo() {
-    const blockNumber = await this.client.getBlockNumber();
+  /** Claves de las redes EVM operativas (para que el indexer las recorra). */
+  get evmKeys(): string[] {
+    return [...this.nets.keys()];
+  }
+
+  private entry(key?: string): NetEntry {
+    const k = key ?? this.primaryKey;
+    const e = this.nets.get(k);
+    if (!e) throw new BadRequestException(`Red EVM no soportada o deshabilitada: ${k}`);
+    return e;
+  }
+
+  cfgOf(key?: string): NetworkConfig {
+    return this.entry(key).cfg;
+  }
+
+  async getInfo(key?: string) {
+    const { cfg, client } = this.entry(key);
+    const blockNumber = await client.getBlockNumber();
     return {
-      chainId: this.cfg.chainId,
-      chainName: this.cfg.chainName,
-      explorerUrl: this.cfg.explorerUrl,
-      nativeSymbol: this.cfg.nativeSymbol,
+      network: cfg.key,
+      chainId: cfg.chainId,
+      chainName: cfg.name,
+      explorerUrl: cfg.explorerUrl,
+      nativeSymbol: cfg.nativeSymbol,
       blockNumber: blockNumber.toString(),
-      defaultToken: this.cfg.usdcAddress,
+      defaultToken: cfg.usdcAddress,
     };
   }
 
@@ -102,38 +128,41 @@ export class EvmService implements OnModuleInit {
     return address as `0x${string}`;
   }
 
-  /** Saldo nativo (ETH) + el token por defecto (USDC) de una address. */
-  async getAddress(address: string) {
+  /** Saldo nativo + el token por defecto (USDC) de una address en una red. */
+  async getAddress(address: string, key?: string) {
+    const { cfg, client } = this.entry(key);
     const addr = this.assertAddress(address);
     const [wei, token] = await Promise.all([
-      this.client.getBalance({ address: addr }),
-      this.getTokenBalance(this.cfg.usdcAddress, addr).catch(() => null),
+      client.getBalance({ address: addr }),
+      this.getTokenBalance(cfg.usdcAddress, addr, key).catch(() => null),
     ]);
     return {
       address: addr,
-      native: {
-        symbol: this.cfg.nativeSymbol,
-        raw: wei.toString(),
-        formatted: formatEther(wei),
-      },
+      network: cfg.key,
+      native: { symbol: cfg.nativeSymbol, raw: wei.toString(), formatted: formatEther(wei) },
       tokens: token ? [token] : [],
-      explorerUrl: `${this.cfg.explorerUrl}/address/${addr}`,
+      explorerUrl: `${cfg.explorerUrl}/address/${addr}`,
     };
   }
 
-  /** Saldo de cualquier token ERC-20 para una address. */
-  async getTokenBalance(tokenAddress: string, address: string): Promise<TokenBalance> {
+  /** Saldo de cualquier token ERC-20 para una address en una red. */
+  async getTokenBalance(
+    tokenAddress: string,
+    address: string,
+    key?: string,
+  ): Promise<TokenBalance> {
+    const { client } = this.entry(key);
     const token = this.assertAddress(tokenAddress);
     const addr = this.assertAddress(address);
     const [raw, decimals, symbol] = await Promise.all([
-      this.client.readContract({
+      client.readContract({
         address: token,
         abi: ERC20_ABI,
         functionName: 'balanceOf',
         args: [addr],
       }),
-      this.client.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' }),
-      this.client.readContract({ address: token, abi: ERC20_ABI, functionName: 'symbol' }),
+      client.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' }),
+      client.readContract({ address: token, abi: ERC20_ABI, functionName: 'symbol' }),
     ]);
     return {
       symbol: symbol as string,
@@ -146,13 +175,14 @@ export class EvmService implements OnModuleInit {
 
   // ─────────────────────────── Indexer (depósitos) ───────────────────────────
 
-  async currentBlock(): Promise<bigint> {
-    return this.client.getBlockNumber();
+  async currentBlock(key?: string): Promise<bigint> {
+    return this.entry(key).client.getBlockNumber();
   }
 
-  async tokenDecimals(tokenAddress: string): Promise<number> {
+  async tokenDecimals(tokenAddress: string, key?: string): Promise<number> {
+    const { client } = this.entry(key);
     const token = this.assertAddress(tokenAddress);
-    const dec = await this.client.readContract({
+    const dec = await client.readContract({
       address: token,
       abi: ERC20_ABI,
       functionName: 'decimals',
@@ -160,18 +190,20 @@ export class EvmService implements OnModuleInit {
     return Number(dec);
   }
 
-  /** Eventos Transfer ERC-20 (del token) hacia un conjunto de direcciones, en un rango de bloques. */
+  /** Eventos Transfer ERC-20 hacia un conjunto de direcciones, en un rango de bloques. */
   async getErc20TransfersTo(
     tokenAddress: string,
     toAddresses: string[],
     fromBlock: bigint,
     toBlock: bigint,
+    key?: string,
   ): Promise<
     Array<{ txHash: string; logIndex: number; to: string; value: bigint; blockNumber: bigint }>
   > {
     if (toAddresses.length === 0) return [];
+    const { client } = this.entry(key);
     const token = this.assertAddress(tokenAddress);
-    const logs = await this.client.getLogs({
+    const logs = await client.getLogs({
       address: token,
       event: parseAbiItem(
         'event Transfer(address indexed from, address indexed to, uint256 value)',
@@ -189,31 +221,32 @@ export class EvmService implements OnModuleInit {
     }));
   }
 
-  /** Estado de una transacción por hash (confirmaciones, éxito/fallo). */
-  async getTransaction(hash: string) {
+  /** Estado de una transacción por hash (confirmaciones, éxito/fallo) en una red. */
+  async getTransaction(hash: string, key?: string) {
+    const { cfg, client } = this.entry(key);
     if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) {
       throw new BadRequestException(`Hash de transacción inválido: ${hash}`);
     }
     const txHash = hash as `0x${string}`;
-    const receipt = await this.client.getTransactionReceipt({ hash: txHash }).catch(() => null);
+    const receipt = await client.getTransactionReceipt({ hash: txHash }).catch(() => null);
     if (!receipt) {
       return {
         hash: txHash,
         status: 'pending',
         confirmations: 0,
-        explorerUrl: `${this.cfg.explorerUrl}/tx/${txHash}`,
+        explorerUrl: `${cfg.explorerUrl}/tx/${txHash}`,
       };
     }
-    const current = await this.client.getBlockNumber();
+    const current = await client.getBlockNumber();
     const confirmations = Number(current - receipt.blockNumber) + 1;
     return {
       hash: txHash,
-      status: receipt.status, // 'success' | 'reverted'
+      status: receipt.status,
       blockNumber: receipt.blockNumber.toString(),
       confirmations,
       from: receipt.from,
       to: receipt.to,
-      explorerUrl: `${this.cfg.explorerUrl}/tx/${txHash}`,
+      explorerUrl: `${cfg.explorerUrl}/tx/${txHash}`,
     };
   }
 }

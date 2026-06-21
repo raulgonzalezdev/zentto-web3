@@ -46,3 +46,29 @@ export class TotpCodeDto {
   @Length(6, 6)
   code!: string;
 }
+
+export class VerifyEmailDto {
+  @ApiProperty({ description: 'Token recibido en el email de verificación' })
+  @IsString()
+  @MinLength(10)
+  token!: string;
+}
+
+export class ForgotPasswordDto {
+  @ApiProperty({ example: 'demo@zentto.net' })
+  @IsEmail()
+  email!: string;
+}
+
+export class ResetPasswordDto {
+  @ApiProperty({ description: 'Token recibido en el email de restablecimiento' })
+  @IsString()
+  @MinLength(10)
+  token!: string;
+
+  @ApiProperty({ example: 'NuevaClave123', minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  newPassword!: string;
+}
