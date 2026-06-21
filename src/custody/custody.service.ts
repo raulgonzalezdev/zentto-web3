@@ -3,7 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { DataSource, Repository } from 'typeorm';
-import { Chain, createWalletClient, defineChain, http, parseUnits, WalletClient } from 'viem';
+import {
+  Chain,
+  createWalletClient,
+  defineChain,
+  fallback,
+  http,
+  parseUnits,
+  WalletClient,
+} from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { CustodyConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
 import { DepositAddressEntity } from '../database/entities/deposit-address.entity';
@@ -124,10 +132,13 @@ export class CustodyService implements OnModuleInit {
       throw new ServiceUnavailableException('Custodia no configurada (CUSTODY_MNEMONIC ausente)');
     }
     const { cfg, chain } = this.evmNet(networkKey);
+    const transport = cfg.fallbackRpcUrl
+      ? fallback([http(cfg.rpcUrl), http(cfg.fallbackRpcUrl)])
+      : http(cfg.rpcUrl);
     const wallet: WalletClient = createWalletClient({
       account: this.hotAccount(),
       chain,
-      transport: http(cfg.rpcUrl),
+      transport,
     });
     const value = parseUnits(amount, 6); // USDC = 6 decimales
     return wallet.writeContract({
