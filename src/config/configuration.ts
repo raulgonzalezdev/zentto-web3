@@ -9,6 +9,15 @@ export interface AppConfig {
   corsOrigin: string;
   /** Emails de operadores del backoffice. Vacío = cualquier autenticado (dev). */
   operatorEmails: string[];
+  /** URL pública del frontend (links de verificación/reset enviados por email). */
+  url: string;
+}
+
+export interface NotifyConfig {
+  /** Base URL del microservicio zentto-notify (envío de emails transaccionales). */
+  baseUrl: string;
+  /** API key (header x-api-key). Vacío => modo dry-run: se loguea el email en consola. */
+  apiKey: string;
 }
 
 export interface DatabaseConfig {
@@ -138,7 +147,12 @@ export default () => ({
       .split(',')
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
+    url: process.env.APP_URL ?? 'https://neo.zentto.net',
   } satisfies AppConfig,
+  notify: {
+    baseUrl: process.env.NOTIFY_BASE_URL ?? 'https://notify.zentto.net',
+    apiKey: process.env.NOTIFY_API_KEY ?? '',
+  } satisfies NotifyConfig,
   database: {
     host: process.env.DB_HOST ?? 'localhost',
     port: parseInt(process.env.DB_PORT ?? '5544', 10),

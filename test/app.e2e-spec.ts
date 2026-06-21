@@ -295,6 +295,42 @@ describe('Zentto Web3 (e2e)', () => {
     expect(st.body.status).toBe('in_review');
   });
 
+  it('verify-email con token inválido → 400', async () => {
+    await agent
+      .post('/api/auth/verify-email')
+      .set('x-csrf-token', csrf)
+      .send({ token: 'token-que-no-existe-1234567890' })
+      .expect(400);
+  });
+
+  it('verify-email con token real generado marca emailVerified', async () => {
+    // El token plano solo viaja por email (en CI con NOTIFY_API_KEY vacío no se
+    // envía). Lo regeneramos vía el servicio para probar el endpoint extremo a
+    // extremo: el servicio hashea y persiste; el endpoint valida el plano.
+    const me = await agent.get('/api/auth/me').expect(200);
+    const userId = me.body.user.id as string;
+
+    const { AccountTokenService } = await import('../src/auth/account-token.service');
+    const tokenSvc = app.get(AccountTokenService);
+    const plain = await tokenSvc.issue(userId, 'verify_email', 60_000);
+
+    await agent
+      .post('/api/auth/verify-email')
+      .set('x-csrf-token', csrf)
+      .send({ token: plain })
+      .expect(201);
+
+    const after = await agent.get('/api/auth/me').expect(200);
+    expect(after.body.user.emailVerified).toBe(true);
+  });
+
+  it('forgot-password siempre responde 200 (no revela si el email existe)', async () => {
+    await request(app.getHttpServer())
+      .post('/api/auth/forgot-password')
+      .send({ email: `noexiste_${Date.now()}@zentto.net` })
+      .expect(200);
+  });
+
   it('logout cierra la sesión', async () => {
     await agent.post('/api/auth/logout').set('x-csrf-token', csrf).expect(201);
     await agent.get('/api/auth/me').expect(401);

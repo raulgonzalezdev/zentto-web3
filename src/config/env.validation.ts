@@ -11,6 +11,12 @@ export const envValidationSchema = Joi.object({
   CORS_ORIGIN: Joi.string().default('*'),
   // Emails de operadores del backoffice (coma). Vacío = cualquier autenticado (dev).
   OPERATOR_EMAILS: Joi.string().allow('').default(''),
+  // URL pública del frontend (links de verificación de email / reset de contraseña).
+  APP_URL: Joi.string().default('https://neo.zentto.net'),
+
+  // zentto-notify (envío de emails transaccionales). Sin API key => dry-run (log a consola).
+  NOTIFY_BASE_URL: Joi.string().default('https://notify.zentto.net'),
+  NOTIFY_API_KEY: Joi.string().allow('').default(''),
 
   DB_HOST: Joi.string().default('localhost'),
   DB_PORT: Joi.number().default(5544),

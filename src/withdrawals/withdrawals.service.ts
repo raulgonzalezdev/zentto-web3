@@ -21,6 +21,8 @@ import { LedgerService } from '../ledger/ledger.service';
 
 const WITHDRAWABLE_ASSET = 'USDC';
 const SYSTEM_CUSTODY = 'custody';
+/** Ventana de enfriamiento tras un cambio de contraseña antes de permitir retiros. */
+const PASSWORD_CHANGE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 export interface WithdrawRequest {
   userId: string;
@@ -64,12 +66,37 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * Step-up auth: el retiro DEBE estar autorizado con Google Authenticator (TOTP).
-   * Garantiza que sea el dueño de la cuenta quien autoriza la salida de fondos.
+   * Step-up auth + anti-fraude por cambio de clave reciente.
+   *
+   * 1) El retiro DEBE estar autorizado con Google Authenticator (TOTP): garantiza
+   *    que sea el dueño de la cuenta quien autoriza la salida de fondos.
+   * 2) Si la contraseña cambió hace < 24h (señal típica de toma de cuenta) y NO hay
+   *    2FA activo, se rechaza el retiro: el atacante que reseteó la clave por email
+   *    no podría además generar el código TOTP. Con 2FA activo, el TOTP ya cubre el
+   *    riesgo y el retiro procede normalmente.
+   *
+   * Capas de seguridad de fondos adicionales ya presentes en el sistema:
+   *   - Sesión por cookies httpOnly (no accesible por JS) + protección CSRF
+   *     double-submit en mutaciones.
+   *   - Holds/escrow: el saldo se retiene al instante; el débito contable solo se
+   *     hace al confirmar on-chain. Si el broadcast falla, el hold se libera
+   *     (reembolso automático): el dinero nunca queda "en el aire".
+   *   - Idempotencia por `idempotencyKey`: reintentos no duplican retiros.
    */
   private async assertStepUp(userId: string, totpCode?: string): Promise<void> {
     const user = await this.auth.getById(userId);
+
+    const changedRecently =
+      !!user.passwordChangedAt &&
+      Date.now() - user.passwordChangedAt.getTime() < PASSWORD_CHANGE_COOLDOWN_MS;
+
     if (!user.totpEnabled) {
+      if (changedRecently) {
+        throw new BadRequestException(
+          'Cambiaste tu contraseña hace poco. Por seguridad, activa Google Authenticator (2FA) ' +
+            'o espera 24 horas antes de retirar fondos.',
+        );
+      }
       throw new BadRequestException(
         'Habilita Google Authenticator (2FA) en tu cuenta antes de retirar fondos',
       );

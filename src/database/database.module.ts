@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatabaseConfig } from '../config/configuration';
+import { AccountTokenEntity } from './entities/account-token.entity';
 import { BlockEntity } from './entities/block.entity';
 import { ChainCursorEntity } from './entities/chain-cursor.entity';
 import { ChainDepositEntity } from './entities/chain-deposit.entity';
@@ -46,6 +47,7 @@ import { UserEntity } from './entities/user.entity';
             P2pOrderEntity,
             P2pTradeEntity,
             PaymentMethodEntity,
+            AccountTokenEntity,
           ],
           synchronize: db.synchronize,
           logging: db.logging,
