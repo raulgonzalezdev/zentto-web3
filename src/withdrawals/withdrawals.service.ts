@@ -249,7 +249,13 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
         });
         await repo.save(payment);
 
-        const hold = await this.ledger.createHold(manager, userAcc.id, asset, quote.total, payment.id);
+        const hold = await this.ledger.createHold(
+          manager,
+          userAcc.id,
+          asset,
+          quote.total,
+          payment.id,
+        );
         payment.metadata = { ...payment.metadata, holdId: hold.id };
         await repo.save(payment);
         return payment;
@@ -361,10 +367,20 @@ export class WithdrawalsService implements OnModuleInit, OnApplicationShutdown {
       // Debita el total al usuario; el monto enviado va a custodia y la comisión a tesorería.
       const entries = [
         { accountId: userAcc.id, direction: 'debit' as const, amount: totalDebit, asset: p.asset },
-        { accountId: custodyAcc.id, direction: 'credit' as const, amount: p.amount, asset: p.asset },
+        {
+          accountId: custodyAcc.id,
+          direction: 'credit' as const,
+          amount: p.amount,
+          asset: p.asset,
+        },
       ];
       if (isPositive(totalFee)) {
-        entries.push({ accountId: feeAcc.id, direction: 'credit' as const, amount: totalFee, asset: p.asset });
+        entries.push({
+          accountId: feeAcc.id,
+          direction: 'credit' as const,
+          amount: totalFee,
+          asset: p.asset,
+        });
       }
       await this.ledger.postJournal(manager, p.id, entries);
       await manager

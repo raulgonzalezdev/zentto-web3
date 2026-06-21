@@ -73,11 +73,7 @@ export class AdminController {
 
   @Post('p2p/trades/:id/resolve')
   @ApiOperation({ summary: 'Resolver disputa: release→comprador o refund→vendedor' })
-  resolve(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-    @Body() dto: ResolveDisputeDto,
-  ) {
+  resolve(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ResolveDisputeDto) {
     return this.market.resolveDispute(user.sub, id, dto.decision);
   }
 }

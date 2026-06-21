@@ -128,10 +128,21 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
       toBlock = fromBlock + BigInt(this.cfg.scanRange);
     }
     if (toBlock < fromBlock) {
-      return { fromBlock: fromBlock.toString(), toBlock: toBlock.toString(), found: 0, credited: 0 };
+      return {
+        fromBlock: fromBlock.toString(),
+        toBlock: toBlock.toString(),
+        found: 0,
+        credited: 0,
+      };
     }
 
-    const transfers = await this.evm.getErc20TransfersTo(usdc, addresses, fromBlock, toBlock, netKey);
+    const transfers = await this.evm.getErc20TransfersTo(
+      usdc,
+      addresses,
+      fromBlock,
+      toBlock,
+      netKey,
+    );
     const decimals = transfers.length ? await this.evm.tokenDecimals(usdc, netKey) : 6;
 
     let credited = 0;
@@ -143,7 +154,10 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
       if (ok) credited++;
     }
 
-    await this.cursors.save({ network: netKey, lastBlock: toBlock.toString() } as ChainCursorEntity);
+    await this.cursors.save({
+      network: netKey,
+      lastBlock: toBlock.toString(),
+    } as ChainCursorEntity);
     return {
       fromBlock: fromBlock.toString(),
       toBlock: toBlock.toString(),

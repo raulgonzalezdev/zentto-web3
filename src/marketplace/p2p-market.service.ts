@@ -270,11 +270,26 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
       );
       // Comisión de plataforma: el comprador recibe el neto; la comisión va a tesorería.
       const quote = this.fees.quoteP2p(trade.amount);
-      const feeAcc = await this.ledger.getOrCreateAccount('system', FEE_ACCOUNT, trade.asset, manager);
+      const feeAcc = await this.ledger.getOrCreateAccount(
+        'system',
+        FEE_ACCOUNT,
+        trade.asset,
+        manager,
+      );
       if (trade.holdId) await this.ledger.setHoldStatus(manager, trade.holdId, 'committed');
       const entries = [
-        { accountId: sellerAcc.id, direction: 'debit' as const, amount: trade.amount, asset: trade.asset },
-        { accountId: buyerAcc.id, direction: 'credit' as const, amount: quote.net, asset: trade.asset },
+        {
+          accountId: sellerAcc.id,
+          direction: 'debit' as const,
+          amount: trade.amount,
+          asset: trade.asset,
+        },
+        {
+          accountId: buyerAcc.id,
+          direction: 'credit' as const,
+          amount: quote.net,
+          asset: trade.asset,
+        },
       ];
       if (isPositive(quote.platformFee)) {
         entries.push({
@@ -409,11 +424,26 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
           manager,
         );
         const quote = this.fees.quoteP2p(trade.amount);
-        const feeAcc = await this.ledger.getOrCreateAccount('system', FEE_ACCOUNT, trade.asset, manager);
+        const feeAcc = await this.ledger.getOrCreateAccount(
+          'system',
+          FEE_ACCOUNT,
+          trade.asset,
+          manager,
+        );
         if (trade.holdId) await this.ledger.setHoldStatus(manager, trade.holdId, 'committed');
         const entries = [
-          { accountId: sellerAcc.id, direction: 'debit' as const, amount: trade.amount, asset: trade.asset },
-          { accountId: buyerAcc.id, direction: 'credit' as const, amount: quote.net, asset: trade.asset },
+          {
+            accountId: sellerAcc.id,
+            direction: 'debit' as const,
+            amount: trade.amount,
+            asset: trade.asset,
+          },
+          {
+            accountId: buyerAcc.id,
+            direction: 'credit' as const,
+            amount: quote.net,
+            asset: trade.asset,
+          },
         ];
         if (isPositive(quote.platformFee)) {
           entries.push({
@@ -471,7 +501,8 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
           const fresh = await this.trades.findOne({ where: { id: t.id } });
           if (!fresh || fresh.status !== 'pending') continue;
           fresh.status = 'disputed';
-          fresh.disputeReason = 'Venció el tiempo de pago con la operación en curso (escalado automático)';
+          fresh.disputeReason =
+            'Venció el tiempo de pago con la operación en curso (escalado automático)';
           fresh.disputeBy = fresh.sellerUserId;
           await this.trades.save(fresh);
           this.logger.log(`Trade ${t.id} escalado a disputa (venció el pago con interacción)`);
@@ -495,7 +526,8 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
         const fresh = await this.trades.findOne({ where: { id: t.id } });
         if (!fresh || fresh.status !== 'paid') continue;
         fresh.status = 'disputed';
-        fresh.disputeReason = 'El vendedor no liberó en el tiempo establecido (escalado automático)';
+        fresh.disputeReason =
+          'El vendedor no liberó en el tiempo establecido (escalado automático)';
         fresh.disputeBy = fresh.buyerUserId;
         await this.trades.save(fresh);
         this.logger.log(`Trade ${t.id} escalado a disputa (vendedor no liberó a tiempo)`);
@@ -541,7 +573,14 @@ export class P2pMarketService implements OnModuleInit, OnApplicationShutdown {
       this.rateCache && Date.now() - this.rateCache.at < RATE_TTL_MS ? this.rateCache : null;
     const cached = fresh ?? (await this.fetchRate());
     if (!cached) {
-      return { usdtVes: null, source: null, updatedAt: null, bandPct: this.bandPct, min: null, max: null };
+      return {
+        usdtVes: null,
+        source: null,
+        updatedAt: null,
+        bandPct: this.bandPct,
+        min: null,
+        max: null,
+      };
     }
     return {
       usdtVes: cached.rate,

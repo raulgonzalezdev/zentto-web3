@@ -146,12 +146,21 @@ export class EvmService implements OnModuleInit {
   }
 
   /** Saldo de cualquier token ERC-20 para una address en una red. */
-  async getTokenBalance(tokenAddress: string, address: string, key?: string): Promise<TokenBalance> {
+  async getTokenBalance(
+    tokenAddress: string,
+    address: string,
+    key?: string,
+  ): Promise<TokenBalance> {
     const { client } = this.entry(key);
     const token = this.assertAddress(tokenAddress);
     const addr = this.assertAddress(address);
     const [raw, decimals, symbol] = await Promise.all([
-      client.readContract({ address: token, abi: ERC20_ABI, functionName: 'balanceOf', args: [addr] }),
+      client.readContract({
+        address: token,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [addr],
+      }),
       client.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' }),
       client.readContract({ address: token, abi: ERC20_ABI, functionName: 'symbol' }),
     ]);
@@ -173,7 +182,11 @@ export class EvmService implements OnModuleInit {
   async tokenDecimals(tokenAddress: string, key?: string): Promise<number> {
     const { client } = this.entry(key);
     const token = this.assertAddress(tokenAddress);
-    const dec = await client.readContract({ address: token, abi: ERC20_ABI, functionName: 'decimals' });
+    const dec = await client.readContract({
+      address: token,
+      abi: ERC20_ABI,
+      functionName: 'decimals',
+    });
     return Number(dec);
   }
 
@@ -192,7 +205,9 @@ export class EvmService implements OnModuleInit {
     const token = this.assertAddress(tokenAddress);
     const logs = await client.getLogs({
       address: token,
-      event: parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)'),
+      event: parseAbiItem(
+        'event Transfer(address indexed from, address indexed to, uint256 value)',
+      ),
       args: { to: toAddresses as `0x${string}`[] },
       fromBlock,
       toBlock,
