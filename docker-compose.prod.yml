@@ -1,0 +1,13 @@
+# Override de PRODUCCIÓN para el server (Hetzner /opt/zentto-web3).
+#
+# Pasa TODO el .env al contenedor: el bloque `environment:` de docker-compose.yml
+# solo declara lo básico (DB/JWT/AI). Las secciones Didit/KYC/EVM/custody/fees/
+# withdrawals viven SOLO en .env, así que sin este `env_file` el contenedor arranca
+# sin CUSTODY_MNEMONIC, ZENTTO_KYC_*, EVM_RPC_*, etc. → fallan depósitos y KYC.
+#
+# DEPLOY (siempre con AMBOS archivos, nunca solo el base):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build web3-api
+services:
+  web3-api:
+    env_file:
+      - .env
