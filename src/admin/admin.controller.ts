@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ResolveDisputeDto } from '../marketplace/dto/p2p.dto';
@@ -63,6 +63,18 @@ export class AdminController {
   @ApiOperation({ summary: 'Actividad on-chain: depósitos + retiros con su tx y link al explorer' })
   onchainActivity() {
     return this.admin.onchainActivity();
+  }
+
+  @Patch('users/:id')
+  @ApiOperation({ summary: 'Edita datos del usuario (nombre). NO toca saldos.' })
+  updateUser(@Param('id') id: string, @Body() body: { displayName?: string }) {
+    return this.admin.updateUser(id, body);
+  }
+
+  @Post('users/:id/reset-password')
+  @ApiOperation({ summary: 'Resetea la contraseña de un usuario (operador)' })
+  resetUserPassword(@Param('id') id: string, @Body() body: { newPassword: string }) {
+    return this.admin.resetUserPassword(id, body.newPassword);
   }
 
   @Get('users')
