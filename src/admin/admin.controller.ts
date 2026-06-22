@@ -54,7 +54,9 @@ export class AdminController {
   }
 
   @Get('custody')
-  @ApiOperation({ summary: 'Control de fondos: saldo on-chain del hot wallet (gas + tokens) por red' })
+  @ApiOperation({
+    summary: 'Control de fondos: saldo on-chain del hot wallet (gas + tokens) por red',
+  })
   custody() {
     return this.admin.custodyOverview();
   }

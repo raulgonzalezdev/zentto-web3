@@ -207,7 +207,10 @@ export class DepositIndexerService implements OnModuleInit, OnApplicationShutdow
         if (ok) credited++;
       }
     }
-    await this.cursors.save({ network: NETWORK_TRON, lastBlock: String(nowMs) } as ChainCursorEntity);
+    await this.cursors.save({
+      network: NETWORK_TRON,
+      lastBlock: String(nowMs),
+    } as ChainCursorEntity);
     return credited;
   }
 

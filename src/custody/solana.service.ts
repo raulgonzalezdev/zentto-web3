@@ -97,8 +97,7 @@ export class SolanaService {
         const pre = (tx.meta.preTokenBalances ?? []).find(
           (b) => b.accountIndex === post.accountIndex,
         );
-        const delta =
-          BigInt(post.uiTokenAmount.amount) - BigInt(pre?.uiTokenAmount.amount ?? '0');
+        const delta = BigInt(post.uiTokenAmount.amount) - BigInt(pre?.uiTokenAmount.amount ?? '0');
         if (delta <= 0n) continue; // no es un ingreso
         out.push({
           txId: s.signature,
