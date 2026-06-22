@@ -28,6 +28,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { BinanceModule } from './binance/binance.module';
 import { P2pModule } from './p2p/p2p.module';
 import { RechargeModule } from './recharge/recharge.module';
+import { SettingsModule } from './settings/settings.module';
 import { UsersModule } from './users/users.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
@@ -68,6 +69,7 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
     UsersModule,
     HealthModule,
     RechargeModule,
+    SettingsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

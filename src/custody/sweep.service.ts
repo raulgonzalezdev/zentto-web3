@@ -16,6 +16,7 @@ import {
 import { mnemonicToAccount } from 'viem/accounts';
 import { CustodyConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
 import { DepositAddressEntity } from '../database/entities/deposit-address.entity';
+import { SettingsService } from '../settings/settings.service';
 
 const NETWORK_EVM = 'evm';
 const HOT_ACCOUNT_INDEX = 0;
@@ -71,6 +72,7 @@ export class SweepService implements OnModuleInit, OnApplicationShutdown {
   constructor(
     @InjectRepository(DepositAddressEntity)
     private readonly deposits: Repository<DepositAddressEntity>,
+    private readonly settings: SettingsService,
     config: ConfigService,
   ) {
     this.mnemonic = config.getOrThrow<CustodyConfig>('custody').mnemonic;
@@ -172,8 +174,8 @@ export class SweepService implements OnModuleInit, OnApplicationShutdown {
       args: [depAddr],
     })) as bigint;
 
-    // Umbral mínimo (evita barrer polvo y malgastar gas): 0.5 del token.
-    const minRaw = parseUnits('0.5', token.decimals);
+    // Umbral mínimo (evita barrer polvo y malgastar gas); editable en backoffice.
+    const minRaw = parseUnits(String(this.settings.getNumber('sweep.minToken', 0.5)), token.decimals);
     if (balance < minRaw) return 'skip';
 
     // ¿Tiene gas para 1 transfer ERC-20? Si no, el hot wallet le envía.

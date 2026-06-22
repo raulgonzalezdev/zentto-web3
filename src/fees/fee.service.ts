@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FeesConfig } from '../config/configuration';
 import { addStr, cmpStr, fromBase, subStr, toBase } from '../common/money.util';
+import { SettingsService } from '../settings/settings.service';
 
 /** Cuenta maestra de tesorería donde se acumulan las comisiones de plataforma. */
 export const FEE_ACCOUNT = 'fees';
@@ -26,21 +27,49 @@ export interface FeeQuote {
  */
 @Injectable()
 export class FeeService {
-  private readonly cfg: FeesConfig;
+  private readonly cfg: FeesConfig; // defaults del .env
 
-  constructor(config: ConfigService) {
+  constructor(
+    config: ConfigService,
+    private readonly settings: SettingsService,
+  ) {
     this.cfg = config.getOrThrow<FeesConfig>('fees');
   }
 
+  // Tarifas efectivas: settings (editables en backoffice) con el .env como default.
+  private p2pPct(): number {
+    return this.settings.getNumber('fee.p2pPct', this.cfg.p2pPct);
+  }
+  private depositPct(): number {
+    return this.settings.getNumber('fee.depositPct', this.cfg.depositPct);
+  }
+  private withdrawPct(): number {
+    return this.settings.getNumber('fee.withdrawPct', this.cfg.withdrawPct);
+  }
+  private withdrawNetworkFee(): number {
+    return this.settings.getNumber('fee.withdrawNetworkFee', this.cfg.withdrawNetworkFee);
+  }
+  private minFee(): number {
+    return this.settings.getNumber('fee.minFee', this.cfg.minFee);
+  }
+
+  /** Tarifas vigentes (efectivas) — lo que ve el backoffice. */
   get rates(): FeesConfig {
-    return this.cfg;
+    return {
+      p2pPct: this.p2pPct(),
+      depositPct: this.depositPct(),
+      withdrawPct: this.withdrawPct(),
+      withdrawNetworkFee: this.withdrawNetworkFee(),
+      minFee: this.minFee(),
+    };
   }
 
   /** fee = amount * pct (aritmética exacta en base 1e18), con piso `minFee`. */
   private percent(amount: string, pct: number): string {
     const feeBase = (toBase(amount) * toBase(pct.toString())) / 10n ** 18n;
     let fee = fromBase(feeBase);
-    if (cmpStr(fee, String(this.cfg.minFee)) < 0) fee = String(this.cfg.minFee);
+    const min = String(this.minFee());
+    if (cmpStr(fee, min) < 0) fee = min;
     // Nunca cobrar más que el propio monto.
     if (cmpStr(fee, amount) > 0) fee = amount;
     return fee;
@@ -48,7 +77,7 @@ export class FeeService {
 
   /** P2P: comisión sobre el cripto liberado; el comprador recibe el neto. */
   quoteP2p(amount: string): FeeQuote {
-    const platformFee = this.percent(amount, this.cfg.p2pPct);
+    const platformFee = this.percent(amount, this.p2pPct());
     return {
       platformFee,
       networkFee: '0',
@@ -60,7 +89,7 @@ export class FeeService {
 
   /** Recarga/depósito: comisión sobre lo acreditado; el usuario recibe el neto. */
   quoteDeposit(amount: string): FeeQuote {
-    const platformFee = this.percent(amount, this.cfg.depositPct);
+    const platformFee = this.percent(amount, this.depositPct());
     return {
       platformFee,
       networkFee: '0',
@@ -72,8 +101,8 @@ export class FeeService {
 
   /** Retiro: comisión de plataforma + comisión de red; el usuario paga el total. */
   quoteWithdraw(amount: string): FeeQuote {
-    const platformFee = this.percent(amount, this.cfg.withdrawPct);
-    const networkFee = String(this.cfg.withdrawNetworkFee);
+    const platformFee = this.percent(amount, this.withdrawPct());
+    const networkFee = String(this.withdrawNetworkFee());
     const totalFee = addStr(platformFee, networkFee);
     return {
       platformFee,
