@@ -5,9 +5,11 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Instalar dependencias (incluye dev para compilar)
+# Instalar dependencias (incluye dev para compilar). `npm ci` para builds
+# reproducibles; fallback a `npm install` si el lock difiere por deps nativas
+# opcionales resueltas en otra plataforma (ej. utf-8-validate/bufferutil de Solana).
 COPY package*.json ./
-RUN npm ci
+RUN npm ci || npm install
 
 COPY tsconfig*.json nest-cli.json ./
 COPY src ./src
