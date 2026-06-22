@@ -8,7 +8,9 @@
   },
   "moduleNameMapper": {
     "^tronweb$": "<rootDir>/mocks/tronweb.ts",
-    "^@stellar/stellar-sdk$": "<rootDir>/mocks/stellar-sdk.ts"
+    "^@stellar/stellar-sdk$": "<rootDir>/mocks/stellar-sdk.ts",
+    "^@solana/web3.js$": "<rootDir>/mocks/solana-web3.ts",
+    "^@solana/spl-token$": "<rootDir>/mocks/solana-spl-token.ts"
   },
   "testTimeout": 60000
 }
