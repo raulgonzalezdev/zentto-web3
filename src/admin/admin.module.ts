@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ChainDepositEntity } from '../database/entities/chain-deposit.entity';
 import { KycVerificationEntity } from '../database/entities/kyc-verification.entity';
 import { PaymentEntity } from '../database/entities/payment.entity';
 import { RechargeRequestEntity } from '../database/entities/recharge-request.entity';
@@ -20,6 +21,7 @@ import { OperatorGuard } from './operator.guard';
       KycVerificationEntity,
       PaymentEntity,
       RechargeRequestEntity,
+      ChainDepositEntity,
     ]),
     LedgerModule,
     P2pMarketModule,
