@@ -5,6 +5,7 @@ import { In, Repository } from 'typeorm';
 import { addStr } from '../common/money.util';
 import { LedgerConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
 import { CustodyService } from '../custody/custody.service';
+import { ChainDepositEntity } from '../database/entities/chain-deposit.entity';
 import { KycVerificationEntity } from '../database/entities/kyc-verification.entity';
 import { PaymentEntity } from '../database/entities/payment.entity';
 import { RechargeRequestEntity } from '../database/entities/recharge-request.entity';
@@ -17,6 +18,7 @@ import { LedgerService } from '../ledger/ledger.service';
 export class AdminService {
   private readonly assets: string[];
   private readonly evmNetworks: NetworkConfig[];
+  private readonly explorerByNetwork: Record<string, string> = {};
 
   constructor(
     @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
@@ -25,6 +27,8 @@ export class AdminService {
     @InjectRepository(PaymentEntity) private readonly payments: Repository<PaymentEntity>,
     @InjectRepository(RechargeRequestEntity)
     private readonly recharges: Repository<RechargeRequestEntity>,
+    @InjectRepository(ChainDepositEntity)
+    private readonly chainDeposits: Repository<ChainDepositEntity>,
     private readonly ledger: LedgerService,
     private readonly custody: CustodyService,
     private readonly evm: EvmService,
@@ -32,9 +36,68 @@ export class AdminService {
     config: ConfigService,
   ) {
     this.assets = config.getOrThrow<LedgerConfig>('ledger').assets;
-    this.evmNetworks = config
-      .getOrThrow<NetworksConfig>('networks')
-      .list.filter((n) => n.family === 'evm' && n.enabled);
+    const all = config.getOrThrow<NetworksConfig>('networks').list;
+    this.evmNetworks = all.filter((n) => n.family === 'evm' && n.enabled);
+    for (const n of all) this.explorerByNetwork[n.key] = n.explorerUrl;
+  }
+
+  /** URL del explorer para una tx según su red (ej. bscscan.com/tx/0x…). */
+  private explorerTx(network: string, txHash: string): string | null {
+    const base = this.explorerByNetwork[network];
+    if (!base || !txHash) return null;
+    // Tron usa /transaction/; EVM usa /tx/.
+    const seg = network === 'tron' ? 'transaction' : 'tx';
+    return `${base}/${seg}/${txHash}`;
+  }
+
+  /**
+   * Actividad ON-CHAIN para el backoffice: depósitos acreditados (chain_deposits)
+   * + retiros emitidos (payments con metadata.txHash), cada uno con su link al
+   * explorer. Es la traza real on-chain que el operador necesita ver.
+   */
+  async onchainActivity(limit = 100) {
+    const deposits = await this.chainDeposits.find({
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+    const depRows = deposits.map((d) => ({
+      kind: 'deposit' as const,
+      network: d.network,
+      asset: d.asset,
+      amount: d.amount,
+      txHash: d.txHash,
+      userId: d.userId,
+      blockNumber: d.blockNumber,
+      explorerUrl: this.explorerTx(d.network, d.txHash),
+      createdAt: d.createdAt,
+    }));
+
+    const withdrawals = await this.payments.find({
+      where: { type: 'withdrawal' },
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+    const wdRows = withdrawals
+      .map((p) => {
+        const meta = (p.metadata ?? {}) as Record<string, unknown>;
+        const txHash = typeof meta.txHash === 'string' ? meta.txHash : '';
+        const network = typeof meta.network === 'string' ? meta.network : '';
+        if (!txHash) return null; // solo las que ya se emitieron on-chain
+        return {
+          kind: 'withdrawal' as const,
+          network,
+          asset: p.asset,
+          amount: p.amount,
+          txHash,
+          userId: p.userId,
+          status: p.status,
+          explorerUrl: this.explorerTx(network, txHash),
+          createdAt: p.createdAt,
+        };
+      })
+      .filter(Boolean);
+
+    return { deposits: depRows, withdrawals: wdRows };
   }
 
   /**

@@ -41,6 +41,12 @@ export class AdminController {
     return this.admin.custodyOverview();
   }
 
+  @Get('onchain-activity')
+  @ApiOperation({ summary: 'Actividad on-chain: depósitos + retiros con su tx y link al explorer' })
+  onchainActivity() {
+    return this.admin.onchainActivity();
+  }
+
   @Get('users')
   @ApiOperation({ summary: 'Todos los usuarios con estado KYC y saldos' })
   users() {
