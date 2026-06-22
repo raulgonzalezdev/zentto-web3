@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ResolveDisputeDto } from '../marketplace/dto/p2p.dto';
 import { P2pMarketService } from '../marketplace/p2p-market.service';
+import { SweepService } from '../custody/sweep.service';
 import { AdminService } from './admin.service';
 import { OperatorGuard } from './operator.guard';
 
@@ -13,7 +14,14 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly market: P2pMarketService,
+    private readonly sweep: SweepService,
   ) {}
+
+  @Post('sweep')
+  @ApiOperation({ summary: 'Barre depósitos → hot wallet (consolida fondos para retiros)' })
+  runSweep() {
+    return this.sweep.sweepAll();
+  }
 
   @Get('stats')
   @ApiOperation({ summary: 'Métricas del panel de operaciones (usuarios, KYC, pagos)' })
