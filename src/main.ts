@@ -6,8 +6,12 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
+import { loadVaultSecrets } from './config/vault';
 
 async function bootstrap() {
+  // Carga secretos sensibles (CUSTODY_MNEMONIC) desde HashiCorp Vault ANTES de
+  // construir Nest, para que @nestjs/config los lea como env. Fallback a .env.
+  await loadVaultSecrets();
   // rawBody: necesario para verificar la firma HMAC de los webhooks de Alchemy
   // (la firma se calcula sobre los bytes crudos del body).
   const app = await NestFactory.create(AppModule, { bufferLogs: false, rawBody: true });
