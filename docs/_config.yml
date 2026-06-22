@@ -1,0 +1,13 @@
+title: Zentto Web3
+description: >-
+  Core bancario de un neobanco cripto custodial — API REST (NestJS) con ledger de
+  doble entrada, depósitos/retiros on-chain, KYC/AML, mercado P2P con escrow y 2FA.
+theme: jekyll-theme-cayman
+show_downloads: false
+
+# Solo este directorio se publica como sitio.
+include:
+  - index.md
+  - arquitectura.md
+  - api.md
+  - operaciones.md
