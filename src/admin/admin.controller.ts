@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ResolveDisputeDto } from '../marketplace/dto/p2p.dto';
 import { P2pMarketService } from '../marketplace/p2p-market.service';
 import { SweepService } from '../custody/sweep.service';
+import { SettingsService } from '../settings/settings.service';
 import { AdminService } from './admin.service';
 import { OperatorGuard } from './operator.guard';
 
@@ -15,7 +16,24 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly market: P2pMarketService,
     private readonly sweep: SweepService,
+    private readonly settings: SettingsService,
   ) {}
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Parámetros configurables (fees, sweep, …) con su valor actual' })
+  listSettings() {
+    return this.settings.list();
+  }
+
+  @Put('settings')
+  @ApiOperation({ summary: 'Actualiza un parámetro configurable (operador)' })
+  async updateSetting(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { key: string; value: string | number | boolean },
+  ) {
+    await this.settings.set(body.key, String(body.value), user?.email ?? user?.sub);
+    return this.settings.list();
+  }
 
   @Post('sweep')
   @ApiOperation({ summary: 'Barre depósitos → hot wallet (consolida fondos para retiros)' })
