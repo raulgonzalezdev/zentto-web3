@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { addStr } from '../common/money.util';
-import { LedgerConfig } from '../config/configuration';
+import { LedgerConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
 import { CustodyService } from '../custody/custody.service';
 import { KycVerificationEntity } from '../database/entities/kyc-verification.entity';
 import { PaymentEntity } from '../database/entities/payment.entity';
@@ -16,6 +16,7 @@ import { LedgerService } from '../ledger/ledger.service';
 @Injectable()
 export class AdminService {
   private readonly assets: string[];
+  private readonly evmNetworks: NetworkConfig[];
 
   constructor(
     @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
@@ -31,6 +32,41 @@ export class AdminService {
     config: ConfigService,
   ) {
     this.assets = config.getOrThrow<LedgerConfig>('ledger').assets;
+    this.evmNetworks = config
+      .getOrThrow<NetworksConfig>('networks')
+      .list.filter((n) => n.family === 'evm' && n.enabled);
+  }
+
+  /**
+   * Control de fondos de CUSTODIA: saldo on-chain real del hot wallet (que firma los
+   * retiros) por red — gas nativo (BNB/ETH/POL) + cada stablecoin (USDT/USDC). Marca
+   * `lowGas` si no alcanza para operar. Es el panel de "control total de los fondos".
+   */
+  async custodyOverview() {
+    if (!this.custody.enabled) return { enabled: false, hotWallet: null, networks: [] };
+    const hot = this.custody.hotWalletAddress();
+    const networks = await Promise.all(
+      this.evmNetworks.map(async (net) => {
+        const info = await this.evm.getAddress(hot, net.key).catch(() => null);
+        const tokens = await Promise.all(
+          (net.tokens ?? []).map(async (t) => {
+            const b = await this.evm.getTokenBalance(t.address, hot, net.key).catch(() => null);
+            return { asset: t.asset, balance: b?.formatted ?? '0' };
+          }),
+        );
+        const gasBal = info?.native?.formatted ?? '0';
+        return {
+          network: net.key,
+          name: net.name,
+          gasSymbol: net.nativeSymbol,
+          gas: gasBal,
+          lowGas: Number(gasBal) < 0.003, // sin esto no puede barrer ni retirar
+          tokens,
+          explorerUrl: `${net.explorerUrl}/address/${hot}`,
+        };
+      }),
+    );
+    return { enabled: true, hotWallet: hot, networks };
   }
 
   /**
