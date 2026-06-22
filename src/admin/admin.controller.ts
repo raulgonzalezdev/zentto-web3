@@ -35,6 +35,12 @@ export class AdminController {
     return this.admin.treasury();
   }
 
+  @Get('custody')
+  @ApiOperation({ summary: 'Control de fondos: saldo on-chain del hot wallet (gas + tokens) por red' })
+  custody() {
+    return this.admin.custodyOverview();
+  }
+
   @Get('users')
   @ApiOperation({ summary: 'Todos los usuarios con estado KYC y saldos' })
   users() {
