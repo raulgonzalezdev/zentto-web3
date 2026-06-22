@@ -17,6 +17,7 @@ import { PaymentMethodEntity } from './entities/payment-method.entity';
 import { LedgerEntryEntity } from './entities/ledger-entry.entity';
 import { PaymentEntity } from './entities/payment.entity';
 import { RechargeRequestEntity } from './entities/recharge-request.entity';
+import { AppSettingEntity } from './entities/app-setting.entity';
 import { TransactionEntity } from './entities/transaction.entity';
 import { UserEntity } from './entities/user.entity';
 import { WithdrawAddressEntity } from './entities/withdraw-address.entity';
@@ -56,6 +57,7 @@ import { BinanceLinkEntity } from './entities/binance-link.entity';
             WithdrawAddressEntity,
             RechargeRequestEntity,
             BinanceLinkEntity,
+            AppSettingEntity,
           ],
           synchronize: db.synchronize,
           logging: db.logging,
