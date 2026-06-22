@@ -23,13 +23,61 @@ export interface SettingDef {
  */
 export const SETTINGS_REGISTRY: SettingDef[] = [
   // ── Fees / Tesorería ──
-  { key: 'fee.p2pPct', group: 'fees', label: 'Comisión P2P', type: 'percent', min: 0, max: 0.2, description: 'Fracción sobre el cripto liberado (0.005 = 0.5%).' },
-  { key: 'fee.depositPct', group: 'fees', label: 'Comisión depósito', type: 'percent', min: 0, max: 0.2, description: 'Fracción sobre cada recarga/depósito on-chain.' },
-  { key: 'fee.withdrawPct', group: 'fees', label: 'Comisión retiro', type: 'percent', min: 0, max: 0.2, description: 'Fracción de plataforma sobre cada retiro.' },
-  { key: 'fee.withdrawNetworkFee', group: 'fees', label: 'Fee de red (retiro)', type: 'number', min: 0, max: 100, description: 'Gas fijo cobrado por retiro, en el asset.' },
-  { key: 'fee.minFee', group: 'fees', label: 'Fee mínimo', type: 'number', min: 0, max: 100, description: 'Piso de comisión por operación.' },
+  {
+    key: 'fee.p2pPct',
+    group: 'fees',
+    label: 'Comisión P2P',
+    type: 'percent',
+    min: 0,
+    max: 0.2,
+    description: 'Fracción sobre el cripto liberado (0.005 = 0.5%).',
+  },
+  {
+    key: 'fee.depositPct',
+    group: 'fees',
+    label: 'Comisión depósito',
+    type: 'percent',
+    min: 0,
+    max: 0.2,
+    description: 'Fracción sobre cada recarga/depósito on-chain.',
+  },
+  {
+    key: 'fee.withdrawPct',
+    group: 'fees',
+    label: 'Comisión retiro',
+    type: 'percent',
+    min: 0,
+    max: 0.2,
+    description: 'Fracción de plataforma sobre cada retiro.',
+  },
+  {
+    key: 'fee.withdrawNetworkFee',
+    group: 'fees',
+    label: 'Fee de red (retiro)',
+    type: 'number',
+    min: 0,
+    max: 100,
+    description: 'Gas fijo cobrado por retiro, en el asset.',
+  },
+  {
+    key: 'fee.minFee',
+    group: 'fees',
+    label: 'Fee mínimo',
+    type: 'number',
+    min: 0,
+    max: 100,
+    description: 'Piso de comisión por operación.',
+  },
   // ── Sweep / barrido ──
-  { key: 'sweep.minToken', group: 'sweep', label: 'Umbral mínimo de barrido', type: 'number', min: 0, max: 1000, description: 'Saldo mínimo de token para barrer una dirección.' },
+  {
+    key: 'sweep.minToken',
+    group: 'sweep',
+    label: 'Umbral mínimo de barrido',
+    type: 'number',
+    min: 0,
+    max: 1000,
+    description: 'Saldo mínimo de token para barrer una dirección.',
+  },
 ];
 
 @Injectable()

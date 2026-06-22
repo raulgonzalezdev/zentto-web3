@@ -184,7 +184,7 @@ describe('Zentto Web3 (e2e)', () => {
   it('asigna una dirección de depósito on-chain (HD)', async () => {
     const res = await agent.get('/api/accounts/deposit-address').expect(200);
     expect(res.body.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
-    expect(res.body.network).toBe('sepolia'); // red primaria del catálogo multi-red
+    expect(res.body.network).toBe('bsc-mainnet'); // red primaria del catálogo multi-red (BSC por defecto, más barata)
   });
 
   it('el retiro exige Google Authenticator (TOTP): sin código → 400', async () => {

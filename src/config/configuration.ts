@@ -223,7 +223,8 @@ function buildNetworks(): NetworkConfig[] {
     family: 'evm',
     chainId: 1,
     name: 'Ethereum',
-    rpcUrl: process.env.ETH_MAINNET_RPC_URL || alchemyRpc('eth-mainnet') || 'https://eth.llamarpc.com',
+    rpcUrl:
+      process.env.ETH_MAINNET_RPC_URL || alchemyRpc('eth-mainnet') || 'https://eth.llamarpc.com',
     fallbackRpcUrl: 'https://eth.llamarpc.com',
     explorerUrl: 'https://etherscan.io',
     nativeSymbol: 'ETH',
@@ -245,7 +246,10 @@ function buildNetworks(): NetworkConfig[] {
     family: 'evm',
     chainId: 137,
     name: 'Polygon',
-    rpcUrl: process.env.POLYGON_MAINNET_RPC_URL || alchemyRpc('polygon-mainnet') || 'https://polygon-rpc.com',
+    rpcUrl:
+      process.env.POLYGON_MAINNET_RPC_URL ||
+      alchemyRpc('polygon-mainnet') ||
+      'https://polygon-rpc.com',
     fallbackRpcUrl: 'https://polygon-rpc.com',
     explorerUrl: 'https://polygonscan.com',
     nativeSymbol: 'POL',
@@ -267,7 +271,10 @@ function buildNetworks(): NetworkConfig[] {
     family: 'evm',
     chainId: 56,
     name: 'BSC',
-    rpcUrl: process.env.BSC_MAINNET_RPC_URL || alchemyRpc('bnb-mainnet') || 'https://bsc-dataseed.binance.org',
+    rpcUrl:
+      process.env.BSC_MAINNET_RPC_URL ||
+      alchemyRpc('bnb-mainnet') ||
+      'https://bsc-dataseed.binance.org',
     fallbackRpcUrl: 'https://bsc-rpc.publicnode.com',
     explorerUrl: 'https://bscscan.com',
     nativeSymbol: 'BNB',
@@ -295,7 +302,13 @@ function buildNetworks(): NetworkConfig[] {
     nativeSymbol: 'TRX',
     usdcAddress: process.env.TRON_USDT_ADDRESS || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
     asset: 'USDT',
-    tokens: [{ address: process.env.TRON_USDT_ADDRESS || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', asset: 'USDT', decimals: 6 }],
+    tokens: [
+      {
+        address: process.env.TRON_USDT_ADDRESS || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+        asset: 'USDT',
+        decimals: 6,
+      },
+    ],
     confirmations: 19,
     isTestnet: false,
     // Tron ya tiene indexer de depósitos (USDT-TRC20). Se activa con TRON_ENABLED=true.
@@ -312,10 +325,17 @@ function buildNetworks(): NetworkConfig[] {
     rpcUrl: process.env.STELLAR_HORIZON_URL || 'https://horizon.stellar.org',
     explorerUrl: 'https://stellar.expert/explorer/public',
     nativeSymbol: 'XLM',
-    usdcAddress: process.env.STELLAR_USDC_ISSUER || 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+    usdcAddress:
+      process.env.STELLAR_USDC_ISSUER || 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
     asset: 'USDC',
     tokens: [
-      { address: process.env.STELLAR_USDC_ISSUER || 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN', asset: 'USDC', decimals: 7 },
+      {
+        address:
+          process.env.STELLAR_USDC_ISSUER ||
+          'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+        asset: 'USDC',
+        decimals: 7,
+      },
     ],
     confirmations: 1,
     isTestnet: false,
@@ -330,7 +350,9 @@ function buildNetworks(): NetworkConfig[] {
     chainId: 0,
     name: 'Solana',
     rpcUrl:
-      process.env.SOLANA_RPC_URL || alchemyRpc('solana-mainnet') || 'https://api.mainnet-beta.solana.com',
+      process.env.SOLANA_RPC_URL ||
+      alchemyRpc('solana-mainnet') ||
+      'https://api.mainnet-beta.solana.com',
     fallbackRpcUrl: 'https://api.mainnet-beta.solana.com',
     explorerUrl: 'https://solscan.io',
     nativeSymbol: 'SOL',
@@ -362,7 +384,9 @@ function buildNetworks(): NetworkConfig[] {
       nativeSymbol: 'ETH',
       usdcAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
       asset: 'USDC',
-      tokens: [{ address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', asset: 'USDC', decimals: 6 }],
+      tokens: [
+        { address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', asset: 'USDC', decimals: 6 },
+      ],
       confirmations: 3,
       isTestnet: true,
       enabled: true,

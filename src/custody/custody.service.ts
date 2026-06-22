@@ -171,7 +171,11 @@ export class CustodyService implements OnModuleInit {
     const transport = netCfg.fallbackRpcUrl
       ? fallback([http(netCfg.rpcUrl), http(netCfg.fallbackRpcUrl)])
       : http(netCfg.rpcUrl);
-    const wallet: WalletClient = createWalletClient({ account: this.hotAccount(), chain, transport });
+    const wallet: WalletClient = createWalletClient({
+      account: this.hotAccount(),
+      chain,
+      transport,
+    });
     const value = parseUnits(amount, token.decimals);
     return wallet.writeContract({
       account: this.hotAccount(),

@@ -175,7 +175,10 @@ export class SweepService implements OnModuleInit, OnApplicationShutdown {
     })) as bigint;
 
     // Umbral mínimo (evita barrer polvo y malgastar gas); editable en backoffice.
-    const minRaw = parseUnits(String(this.settings.getNumber('sweep.minToken', 0.5)), token.decimals);
+    const minRaw = parseUnits(
+      String(this.settings.getNumber('sweep.minToken', 0.5)),
+      token.decimals,
+    );
     if (balance < minRaw) return 'skip';
 
     // ¿Tiene gas para 1 transfer ERC-20? Si no, el hot wallet le envía.
