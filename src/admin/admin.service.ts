@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as bcrypt from 'bcryptjs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { addStr } from '../common/money.util';
-import { LedgerConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
+import { AuthConfig, LedgerConfig, NetworkConfig, NetworksConfig } from '../config/configuration';
 import { CustodyService } from '../custody/custody.service';
 import { ChainDepositEntity } from '../database/entities/chain-deposit.entity';
 import { KycVerificationEntity } from '../database/entities/kyc-verification.entity';
@@ -17,8 +18,32 @@ import { LedgerService } from '../ledger/ledger.service';
 @Injectable()
 export class AdminService {
   private readonly assets: string[];
+  private readonly bcryptRounds: number;
   private readonly evmNetworks: NetworkConfig[];
   private readonly explorerByNetwork: Record<string, string> = {};
+
+  /** Edita datos NO sensibles del usuario (nombre). NUNCA saldos. */
+  async updateUser(id: string, dto: { displayName?: string }) {
+    const u = await this.users.findOne({ where: { id } });
+    if (!u) throw new NotFoundException('Usuario no encontrado');
+    if (dto.displayName !== undefined) {
+      u.displayName = dto.displayName?.trim().slice(0, 100) || null;
+    }
+    await this.users.save(u);
+    return { id: u.id, email: u.email, displayName: u.displayName };
+  }
+
+  /** Resetea la contraseña de un usuario (acción de operador del backoffice). */
+  async resetUserPassword(id: string, newPassword: string) {
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('La contraseña debe tener al menos 8 caracteres');
+    }
+    const u = await this.users.findOne({ where: { id } });
+    if (!u) throw new NotFoundException('Usuario no encontrado');
+    u.passwordHash = await bcrypt.hash(newPassword, this.bcryptRounds);
+    await this.users.save(u);
+    return { ok: true, email: u.email };
+  }
 
   constructor(
     @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
@@ -36,6 +61,7 @@ export class AdminService {
     config: ConfigService,
   ) {
     this.assets = config.getOrThrow<LedgerConfig>('ledger').assets;
+    this.bcryptRounds = config.getOrThrow<AuthConfig>('auth').bcryptRounds;
     const all = config.getOrThrow<NetworksConfig>('networks').list;
     this.evmNetworks = all.filter((n) => n.family === 'evm' && n.enabled);
     for (const n of all) this.explorerByNetwork[n.key] = n.explorerUrl;
