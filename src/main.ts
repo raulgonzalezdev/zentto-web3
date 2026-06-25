@@ -49,30 +49,42 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   // Documentación OpenAPI / Swagger en /{prefix}/docs
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Zentto Web3 API')
-    .setDescription(
-      'Backend Web3 independiente: blockchain básica (Proof of Work), wallets, ' +
-        'pipeline asíncrono de minado, screening AML y generación de informes de ' +
-        'cumplimiento con IA.',
-    )
-    .setVersion('1.0.0')
-    .addTag('blockchain')
-    .addTag('wallets')
-    .addTag('transactions')
-    .addTag('mining')
-    .addTag('compliance')
-    .addTag('analytics')
-    .addTag('health')
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup(`${appCfg.apiPrefix}/docs`, app, document);
+  // SEGURIDAD: nunca pública (estándar zentto-infra/docs/api-contract-standard.md).
+  // Kill-switch DOCS_ENABLED; por defecto DESHABILITADA en producción (cero
+  // superficie). Re-activar con DOCS_ENABLED=true solo tras proteger con guard.
+  const isProd = (process.env.NODE_ENV || 'development') === 'production';
+  const docsEnabled =
+    (process.env.DOCS_ENABLED ?? (isProd ? 'false' : 'true')).toLowerCase() === 'true';
+  if (docsEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Zentto Web3 API')
+      .setDescription(
+        'Backend Web3 independiente: blockchain básica (Proof of Work), wallets, ' +
+          'pipeline asíncrono de minado, screening AML y generación de informes de ' +
+          'cumplimiento con IA.',
+      )
+      .setVersion('1.0.0')
+      .addTag('blockchain')
+      .addTag('wallets')
+      .addTag('transactions')
+      .addTag('mining')
+      .addTag('compliance')
+      .addTag('analytics')
+      .addTag('health')
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup(`${appCfg.apiPrefix}/docs`, app, document);
+  }
 
   await app.listen(appCfg.port, '0.0.0.0');
   logger.log(
     `🚀 Zentto Web3 API escuchando en http://localhost:${appCfg.port}/${appCfg.apiPrefix}`,
   );
-  logger.log(`📚 Swagger en http://localhost:${appCfg.port}/${appCfg.apiPrefix}/docs`);
+  logger.log(
+    docsEnabled
+      ? `📚 Swagger en http://localhost:${appCfg.port}/${appCfg.apiPrefix}/docs`
+      : `🔒 Swagger deshabilitado (DOCS_ENABLED=false${isProd ? ' / producción' : ''})`,
+  );
 }
 
 bootstrap();
